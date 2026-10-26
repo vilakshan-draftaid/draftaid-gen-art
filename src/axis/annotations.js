@@ -18,9 +18,10 @@ export const BOX_PAD = 40;
 
 const BASE = { text: 4.2, arrow: 3.2, arrowW: 1.1, gap: 1.5, over: 2, textGap: 1.4, leader: 18, shoulder: 6 };
 const S = { ...BASE };
-// Scale drafting sizes with the part so labels read the same on every model
+// Scale drafting sizes with the part so labels read the same on every model;
+// parts under 60mm shrink them too
 function setScale(size) {
-  const f = Math.max(1, size / 90);
+  const f = Math.max(size / 90, Math.min(1, size / 60));
   for (const k in BASE) S[k] = BASE[k] * f;
 }
 const FONT_PX = 64;

@@ -122,6 +122,8 @@ export function vectorSnapshot({ renderer, scene, camera, w, h, lead, edges, fac
     const facing = normals.map((n) => n.clone().applyMatrix3(nm).dot(forward) < 0);
     const wa = new THREE.Vector3(), wb = new THREE.Vector3();
     for (const e of list) {
+      // Where pieces meet flush, an edge carries two faces that continue flat: not a real edge
+      if (e.tris.length > 2 && e.tris.some((a, i) => e.tris.some((b, j) => j > i && normals[a].dot(normals[b]) > 0.999))) continue;
       const [t0, t1] = e.tris;
       const keep = t1 === undefined
         || normals[t0].dot(normals[t1]) < CREASE

@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { plate, thru, cboreFront, cboreBack, cskFront, cskBack, chamferFront, chamferBack } from './plate.js';
 
 // All dimensions in mm, taken from the reference drawings. Y is up.
 const SEG = 48;
@@ -227,10 +229,181 @@ function pillowBlock() {
   return { parts, dims };
 }
 
+const rad = (deg) => (deg * PI) / 180;
+const polar = (cx, cy, r, deg) => [cx + r * Math.cos(rad(deg)), cy + r * Math.sin(rad(deg))];
+
+// Drawing 2180-560-05: camera bracket. Ø136 ring and Ø93 flange joined by a 48 neck, 8 thick.
+// Front is +Z; the Ø11 counterbores open to the front, the Ø8 counterbores and countersinks to the back.
+function cameraBracket() {
+  const T = 8, LO = -125;
+  const a = (x, y) => Math.atan2(y, x);
+  const s = new THREE.Shape();
+  s.moveTo(12.5, Math.sqrt(68 ** 2 - 12.5 ** 2));
+  s.absarc(0, 0, 68, a(12.5, Math.sqrt(68 ** 2 - 12.5 ** 2)), a(26.44, -62.65), true);
+  s.absarc(28, -66.33, 4, a(-1.56, 3.68), PI, false); // R4 neck fillets
+  s.lineTo(24, -82.97);
+  s.absarc(28, -82.97, 4, PI, a(-2.22, -3.33) + 2 * PI, false);
+  s.absarc(0, LO, 46.5, a(25.78, 38.7), a(-25.78, 38.7), true);
+  s.absarc(-28, -82.97, 4, a(2.22, -3.33), 0, false);
+  s.lineTo(-24, -66.33);
+  s.absarc(-28, -66.33, 4, 0, a(1.56, 3.68), false);
+  s.absarc(0, 0, 68, a(-26.44, -62.65) + 2 * PI, a(-12.5, Math.sqrt(68 ** 2 - 12.5 ** 2)), true);
+  s.lineTo(-12.5, 64); // 25 wide notch, R4 corners
+  s.absarc(-8.5, 64, 4, PI, PI * 1.5, false);
+  s.lineTo(8.5, 60);
+  s.absarc(8.5, 64, 4, PI * 1.5, PI * 2, false);
+  s.lineTo(12.5, Math.sqrt(68 ** 2 - 12.5 ** 2));
+
+  const holes = [
+    { x: 0, y: 0, profile: thru(70, T) },
+    { x: -15, y: 42.43, profile: cboreFront(6.6, 11, 6.2, T) },
+    { x: 15, y: 42.43, profile: cboreFront(6.6, 11, 6.2, T) },
+    ...[20.5, 39.5].flatMap((d) => [0, 120, 240].map((k) => {
+      const [x, y] = polar(0, 0, 60.85, d + k);
+      return { x, y, profile: cboreBack(4.5, 8, 4.2, T) };
+    })),
+    ...[0, 1, 2, 3, 4, 5].map((k) => {
+      const [x, y] = polar(0, LO, 40, 90 + k * 60);
+      return { x, y, profile: cboreFront(6.6, 11, 6.2, T) };
+    }),
+    { x: -16, y: LO + 28, profile: chamferBack(6, 0.5, T) },
+    { x: 16, y: LO - 28, profile: chamferBack(6, 0.5, T) },
+    { x: 16, y: LO + 28, profile: cskBack(8.5, 17.3, T) },
+    { x: -16, y: LO - 28, profile: cskBack(8.5, 17.3, T) },
+    { x: -40, y: LO, profile: chamferFront(5, 0.5, T) },
+    { x: 40, y: LO, profile: chamferFront(5, 0.5, T) },
+  ];
+
+  const dims = [
+    // Z: front view
+    leader('z', [0, 0, T], 68, 40, 'Ø136'),
+    leader('z', [0, 0, T], 35, 210, 'Ø70', { start: 210, len: 40 }),
+    leader('z', [0, LO, T], 46.5, 220, 'Ø93'),
+    lin('z', 'x', [-24, -74, T], [24, -74, T], -74, '48'),
+    lin('z', 'y', [0, 60, T], [0, 0, T], 84, '60'),
+    lin('z', 'y', [0, 0, T], [0, LO, T], 84, '125'),
+    lin('z', 'x', [-40, LO, T], [40, LO, T], LO - 60, '80 ±0,02'),
+    lin('z', 'x', [-12.5, 60, T], [12.5, 60, T], 80, '25'),
+    leader('z', [-8.5, 64, T], 4, 135, 'R4 (6x)', { start: 225 }),
+    center('z', [0, -74, T], [0, 74, T]),
+    center('z', [-74, 0, T], [74, 0, T]),
+    cross('z', [0, LO, T], 4),
+    // X: side view
+    lin('x', 'z', [0, 68, 0], [0, 68, T], 82, '8'),
+    center('x', [0, -8, 4], [0, 8, 4]),
+    // Y: top view
+    lin('y', 'x', [-68, 68, T], [68, 68, T], T + 16, '136'),
+    lin('y', 'z', [68, 68, 0], [68, 68, T], 82, '8'),
+  ];
+  return { parts: [plate(s, holes, T)], dims };
+}
+
+// Drawing 2180-560-07: IS3800 bracket. Ø93 flange on a 48 wide arm, 200 long, 8 thick.
+function is3800Bracket() {
+  const T = 8;
+  const a = (x, y) => Math.atan2(y, x);
+  const s = new THREE.Shape();
+  s.moveTo(-25.78, -38.7);
+  s.absarc(0, 0, 46.5, a(-25.78, -38.7), a(25.78, -38.7), true);
+  s.absarc(28, -42.03, 4, a(-2.22, 3.33), PI, false); // R4 (2x)
+  s.lineTo(24, -151.5);
+  s.lineTo(22, -153.5);
+  s.lineTo(-22, -153.5);
+  s.lineTo(-24, -151.5);
+  s.lineTo(-24, -42.03);
+  s.absarc(-28, -42.03, 4, 0, a(2.22, 3.33), false);
+
+  const holes = [
+    ...[0, 1, 2, 3, 4, 5].map((k) => {
+      const [x, y] = polar(0, 0, 40, 90 + k * 60);
+      return { x, y, profile: cboreFront(6.6, 11, 6, T) };
+    }),
+    { x: -16, y: 28, profile: chamferBack(6, 0.5, T) },
+    { x: 16, y: -28, profile: chamferBack(6, 0.5, T) },
+    { x: 16, y: 28, profile: cskBack(8.5, 17.3, T) },
+    { x: -16, y: -28, profile: cskBack(8.5, 17.3, T) },
+    { x: -40, y: 0, profile: thru(5, T) },
+    { x: 40, y: 0, profile: thru(5, T) },
+    ...[-90, -148.5].flatMap((y) => [-19.25, 19.25].map((x) => ({ x, y, profile: cboreFront(3.5, 6.5, 3.4, T) }))),
+  ];
+
+  const dims = [
+    // Z: front view
+    leader('z', [0, 0, T], 46.5, 135, 'Ø93'),
+    lin('z', 'y', [0, 46.5, T], [24, -153.5, T], 64, '200'),
+    lin('z', 'y', [0, 0, T], [24, -153.5, T], 46, '153,5'),
+    lin('z', 'y', [0, 0, T], [-19.25, -90, T], -58, '90'),
+    lin('z', 'y', [-19.25, -90, T], [-19.25, -148.5, T], -40, '58,5'),
+    lin('z', 'x', [-19.25, -90, T], [19.25, -90, T], -110, '38,5'),
+    lin('z', 'x', [-24, -153.5, T], [24, -153.5, T], -168, '48'),
+    lin('z', 'x', [-40, 0, T], [40, 0, T], 58, '80'),
+    leader('z', [28, -42.03, T], 4, 30, 'R4 (2x)', { start: 150 }),
+    center('z', [0, -54, T], [0, 54, T]),
+    center('z', [-54, 0, T], [54, 0, T]),
+    // X: side view
+    lin('x', 'z', [0, 46.5, 0], [0, 46.5, T], 60, '8'),
+    // Y: top view
+    lin('y', 'x', [-46.5, 46.5, T], [46.5, 46.5, T], T + 16, 'Ø93'),
+    lin('y', 'z', [46.5, 46.5, 0], [46.5, 46.5, T], 60, '8'),
+  ];
+  return { parts: [plate(s, holes, T)], dims };
+}
+
+// Drawing 2180-100-08: mini cylinder mount. A 4 thick front plate with two
+// countersunk holes, and a block behind it cut at 20° with two M3 tapped holes on top.
+function cylinderMount() {
+  const W = 28.5, H = 30, D = 20, P = 4, TAN = Math.tan(rad(20));
+  // Extra corners where the block meets the plate, so the two share edges
+  const front = new THREE.Shape([
+    new THREE.Vector2(2, 0), new THREE.Vector2(7 + H * TAN, 0), new THREE.Vector2(W, 0), new THREE.Vector2(W, H),
+    new THREE.Vector2(7, H), new THREE.Vector2(0, H), new THREE.Vector2(0, 2 / TAN),
+  ]);
+  const plateGeo = plate(front, [
+    { x: 5.7, y: H - 8.09, profile: cskFront(4.5, 9.4, P) },
+    { x: 11.85, y: H - 25, profile: cskFront(4.5, 9.4, P) },
+  ], P, { basis: new THREE.Matrix4().makeTranslation(0, 0, D - P) });
+
+  // Block built along Y (u = x, v = -z), then its left face is slanted 20°
+  const block = new THREE.Shape([
+    new THREE.Vector2(7, -(D - P)), new THREE.Vector2(W, -(D - P)), new THREE.Vector2(W, 0), new THREE.Vector2(7, 0),
+  ]);
+  const m3 = [[0, H - 8.8 - 0.75], [1.25, H - 8.8], [1.25, H - 6], [1.5, H - 6], [1.5, H]]; // drill 8,8, thread 6
+  const blockGeo = plate(block, [{ x: 16, y: -3.25, profile: m3 }, { x: 16, y: -10.25, profile: m3 }], H, {
+    basis: new THREE.Matrix4().makeBasis(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 1, 0)),
+    warp: (v) => { if (Math.abs(v.x - 7) < 1e-4) v.x = 7 + (H - v.y) * TAN; },
+  });
+
+  const dims = [
+    // Z: front view
+    lin('z', 'x', [0, H, D], [W, H, D], H + 14, '28,5'),
+    lin('z', 'x', [0, H, D], [5.7, H - 8.09, D], H + 6, '5,7'),
+    lin('z', 'y', [W, 0, D], [W, H, D], W + 12, '30'),
+    lin('z', 'y', [0, H, D], [11.85, 5, D], -12, '25'),
+    lin('z', 'x', [0, 0, D], [11.85, 5, D], -8, '11,85'),
+    leader('z', [11.85, 5, D], 4.7, 30, 'Ø4,5 (2x)'),
+    cross('z', [5.7, H - 8.09, D], 2.25),
+    cross('z', [11.85, 5, D], 2.25),
+    // X: side view
+    lin('x', 'z', [W, 0, 0], [W, 0, D], -8, '20'),
+    lin('x', 'z', [W, H, D - P], [W, H, D], H + 8, '4'),
+    // Y: top view
+    lin('y', 'x', [0, H, D], [16, H, 10.25], D + 8, '16'),
+    lin('y', 'z', [W, H, 0], [16, H, 3.25], W + 8, '3,25'),
+    lin('y', 'z', [W, H, 0], [16, H, 10.25], W + 18, '10,25'),
+    leader('y', [16, H, 3.25], 1.5, 135, 'M3x0.5 (2x)'),
+    cross('y', [16, H, 3.25], 1.5),
+    cross('y', [16, H, 10.25], 1.5),
+  ];
+  return { parts: [mergeGeometries([plateGeo, blockGeo])], dims };
+}
+
 export const MODELS = {
   'Gusset bracket': gussetBracket,
   'Slotted L-block': slottedBlock,
   'Pillow block': pillowBlock,
+  'Camera bracket': cameraBracket,
+  'IS3800 bracket': is3800Bracket,
+  'Cylinder mount': cylinderMount,
 };
 
 export function buildModel(name, material) {
