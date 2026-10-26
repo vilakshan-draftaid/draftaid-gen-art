@@ -55,7 +55,7 @@ export default function PartsGrid() {
     },
     color: {
       palette: { type: 'select', options: [
-        { value: 'plot', label: 'Plot' }, { value: 'draftaid', label: 'Draftaid' }, { value: 'custom', label: 'Custom' },
+        { value: 'plot', label: 'Plot' }, { value: 'draftaid', label: 'Draftaid' }, { value: 'draftaidDark', label: 'Draftaid Dark' }, { value: 'custom', label: 'Custom' },
       ], default: 'draftaid' },
       c1: '#C6FFE6', c2: '#4DFFC6', c3: '#00E8AD', c4: '#009878',
       background: '#FFFFFF',

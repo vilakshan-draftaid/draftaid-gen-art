@@ -278,3 +278,8 @@ canvas { display: block; max-width: 100%; }
 .axis-tabs button:hover { color: var(--ax-ink); }
 .axis-tabs button[aria-pressed="true"] { background: var(--ax-ink); color: var(--ax-panel); }
 .axis-tabs button:focus-visible { outline: 2px solid var(--ax-ink); outline-offset: 2px; }
+
+/* Dimension callouts in the Symbol grid */
+.callout i { position: absolute; font-style: normal; white-space: nowrap; transform: translateY(-50%); }
+.callout i span { display: block; }
+.callout b { position: absolute; height: 0.07em; background: currentColor; }

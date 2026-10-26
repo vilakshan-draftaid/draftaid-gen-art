@@ -1,14 +1,19 @@
 import { FONT } from './shared.js';
 
 // Turns the current Symbol grid into exact geometry, then SVG or PNG
+// Cells carry their grid index; a callout cell spans `span` squares as one strip
 export function layoutGrid(p, cells, colors) {
   const { columns, rows, cellSize: s, gap, jitter } = p.grid;
   const width = columns * s + (columns - 1) * gap;
   const height = rows * s + (rows - 1) * gap;
-  const items = cells.map((c, i) => {
+  const items = cells.map((c, n) => {
+    const i = c.index ?? n;
     const col = i % columns, row = Math.floor(i / columns);
     const shift = c.filled ? { x: c.dx * jitter * s, y: c.dy * jitter * s } : { x: 0, y: 0 };
     const x = col * (s + gap) + shift.x, y = row * (s + gap) + shift.y;
+    if (c.callout) {
+      return { x, y, s, w: c.span * s + (c.span - 1) * gap, square: colors[c.color], callout: c.callout.pieces, em: s * p.numbers.size * c.scale };
+    }
     return {
       x, y, s,
       square: c.filled ? colors[c.color] : null,
@@ -30,6 +35,16 @@ export function toSVG(L) {
     `<g font-family='${FONT.replace(/"/g, '')}' font-weight="${L.weight}" font-size="${r(L.fontSize)}" fill="${L.ink}" text-anchor="middle" dominant-baseline="central">`,
   ];
   for (const it of L.items) {
+    if (it.callout) {
+      const cx = it.x + it.w / 2, cy = it.y + it.s / 2;
+      out.push(`<g><rect x="${r(it.x)}" y="${r(it.y)}" width="${r(it.w)}" height="${r(it.s)}" fill="${it.square}"/>`);
+      for (const q of it.callout) {
+        out.push(`<text x="${r(cx + q.x * it.em)}" y="${r(cy + q.y * it.em)}" font-size="${r(q.size * it.em)}" text-anchor="start">${esc(q.t)}</text>`);
+        if (q.over) out.push(`<rect x="${r(cx + q.over.x1 * it.em)}" y="${r(cy + q.over.y * it.em)}" width="${r((q.over.x2 - q.over.x1) * it.em)}" height="${r(0.07 * it.em)}"/>`);
+      }
+      out.push('</g>');
+      continue;
+    }
     if (it.square) out.push(`<rect x="${r(it.x)}" y="${r(it.y)}" width="${r(it.s)}" height="${r(it.s)}" fill="${it.square}"/>`);
     if (it.circle) out.push(`<circle cx="${r(it.x + it.s / 2)}" cy="${r(it.y + it.s / 2)}" r="${r(it.circle.r)}" fill="${it.circle.fill}"/>`);
     if (it.text) out.push(`<text x="${r(it.x + it.s / 2)}" y="${r(it.y + it.s / 2)}">${esc(it.text)}</text>`);
@@ -48,6 +63,18 @@ export async function toPNG(L, scale = 2) {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = `${L.weight} ${L.fontSize}px ${FONT}`;
   for (const it of L.items) {
+    if (it.callout) {
+      const cx = it.x + it.w / 2, cy = it.y + it.s / 2;
+      ctx.fillStyle = it.square; ctx.fillRect(it.x, it.y, it.w, it.s);
+      ctx.fillStyle = L.ink; ctx.textAlign = 'left';
+      for (const q of it.callout) {
+        ctx.font = `${L.weight} ${q.size * it.em}px ${FONT}`;
+        ctx.fillText(q.t, cx + q.x * it.em, cy + q.y * it.em);
+        if (q.over) ctx.fillRect(cx + q.over.x1 * it.em, cy + q.over.y * it.em, (q.over.x2 - q.over.x1) * it.em, 0.07 * it.em);
+      }
+      ctx.textAlign = 'center'; ctx.font = `${L.weight} ${L.fontSize}px ${FONT}`;
+      continue;
+    }
     if (it.square) { ctx.fillStyle = it.square; ctx.fillRect(it.x, it.y, it.s, it.s); }
     if (it.circle) { ctx.fillStyle = it.circle.fill; ctx.beginPath(); ctx.arc(it.x + it.s / 2, it.y + it.s / 2, it.circle.r, 0, Math.PI * 2); ctx.fill(); }
     if (it.text) { ctx.fillStyle = L.ink; ctx.fillText(it.text, it.x + it.s / 2, it.y + it.s / 2); }

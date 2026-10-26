@@ -4,6 +4,8 @@ export const PALETTES = {
   plot: ['#3E8EDE', '#F5C518', '#3DBE5A', '#8FD694'],
   // Draft Green 100, 300, 500, 700
   draftaid: ['#C6FFE6', '#4DFFC6', '#00E8AD', '#009878'],
+  // Black with Draft Green 500, 700
+  draftaidDark: ['#000000', '#000000', '#00E8AD', '#009878'],
 };
 export function hashSeed(str) {
   let h = 1779033703 ^ str.length;

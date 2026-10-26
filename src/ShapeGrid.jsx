@@ -49,6 +49,7 @@ export default function ShapeGrid() {
       palette: { type: 'select', options: [
         { value: 'plot', label: 'Plot' },
         { value: 'draftaid', label: 'Draftaid' },
+        { value: 'draftaidDark', label: 'Draftaid Dark' },
         { value: 'custom', label: 'Custom' },
       ], default: 'plot' },
       c1: '#3E8EDE', c2: '#F5C518', c3: '#3DBE5A', c4: '#8FD694',
