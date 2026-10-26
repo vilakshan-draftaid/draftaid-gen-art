@@ -17,9 +17,9 @@ export function layoutGrid(p, cells, colors) {
     return {
       x, y, s,
       square: c.filled ? colors[c.color] : null,
-      circle: !c.filled && p.empty.style === 'circles'
+      circle: !c.filled && !p.shapesOnly && p.empty.style === 'circles'
         ? { r: (s / 2) * p.empty.circleSize, fill: p.empty.circleColor === 'single' ? p.empty.single : colors[c.color] } : null,
-      text: (c.filled || p.symbols.onEmpty) ? (p.symbols.use === 'mix' ? c.symbol : p.symbols.use) : null,
+      text: !p.shapesOnly && (c.filled || p.symbols.onEmpty) ? (p.symbols.use === 'mix' ? c.symbol : p.symbols.use) : null,
     };
   });
   return { width, height, items, bg: p.color.background, ink: p.symbols.ink, weight: p.symbols.weight, fontSize: s * p.symbols.size };
@@ -59,7 +59,7 @@ export async function toPNG(L, scale = 2) {
   cv.width = Math.ceil(L.width * scale); cv.height = Math.ceil(L.height * scale);
   const ctx = cv.getContext('2d');
   ctx.scale(scale, scale);
-  ctx.fillStyle = L.bg; ctx.fillRect(0, 0, L.width, L.height);
+  // Transparent background, so the PNG drops onto anything
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = `${L.weight} ${L.fontSize}px ${FONT}`;
   for (const it of L.items) {

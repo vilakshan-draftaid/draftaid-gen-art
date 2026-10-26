@@ -18,6 +18,8 @@ export default function SymbolGrid() {
     every: [0.6, 0.1, 3, 0.05],
     exportSvg: { type: 'action', label: 'Copy SVG' },
     exportPng: { type: 'action', label: 'Copy PNG' },
+    // Only the colored squares: no symbols, numbers or circles (also applies to exports)
+    shapesOnly: false,
     grid: {
       columns: [8, 2, 24, 1],
       rows: [5, 2, 16, 1],
@@ -136,11 +138,16 @@ export default function SymbolGrid() {
     return out;
   }, [cells, p.numbers.share, p.numbers.size, p.symbols.weight, JSON.stringify(p.pickNumbers), fontsReady]);
 
+  // Shapes only splits callout strips back into plain squares of the same color
+  const shown = p.shapesOnly
+    ? items.flatMap((c) => (c.callout ? Array.from({ length: c.span }, (_, k) => ({ ...c, callout: null, span: 1, index: c.index + k })) : [c]))
+    : items;
+
   const { columns, rows, cellSize, gap, jitter } = p.grid;
   const cell = `min(${cellSize}px, calc((100vw - 32px - ${gap * (columns - 1)}px) / ${columns}))`;
 
   exportRef.current = (kind) => {
-    const L = layoutGrid(p, items, colors);
+    const L = layoutGrid(p, shown, colors);
     const name = `symbol-grid-${p.seed || 'seed'}.${kind}`;
     const job = kind === 'svg' ? copySVG(toSVG(L), name) : copyPNG(toPNG(L, 2), name);
     Promise.resolve(job).then((m) => { setStatus(m); setTimeout(() => setStatus(''), 2600); });
@@ -155,9 +162,9 @@ export default function SymbolGrid() {
         aria-label="Grid of engineering drawing symbols on colored squares"
         style={{ '--cell': cell, gridTemplateColumns: `repeat(${columns}, var(--cell))`, gap }}
       >
-        {items.map((c) => {
+        {shown.map((c) => {
           if (c.callout) return <Callout key={c.index} c={c} p={p} gap={gap} jitter={jitter} color={colors[c.color]} />;
-          const show = c.filled || p.symbols.onEmpty;
+          const show = !p.shapesOnly && (c.filled || p.symbols.onEmpty);
           const shift = c.filled ? `translate(calc(${c.dx * jitter} * var(--cell)), calc(${c.dy * jitter} * var(--cell)))` : 'none';
           return (
             <div
@@ -171,7 +178,7 @@ export default function SymbolGrid() {
                 fontSize: `calc(var(--cell) * ${p.symbols.size})`,
               }}
             >
-              {!c.filled && p.empty.style === 'circles' && (
+              {!c.filled && !p.shapesOnly && p.empty.style === 'circles' && (
                 <i
                   className="dot"
                   style={{
