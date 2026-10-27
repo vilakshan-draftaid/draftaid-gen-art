@@ -4,6 +4,7 @@ import { useDialKitController } from 'dialkit';
 import { ARTICLE, GDT, SYMBOL_PICK, hashSeed, mulberry32 } from './shared.js';
 import { usePaletteSync } from './usePaletteSync.js';
 import { NUMBER_STYLES, makeCallout, placeCallout } from './callouts.js';
+import { NOISE_TYPES, makeNoise, fbm } from './noise.js';
 import { layoutGrid, toSVG, toPNG, copySVG, copyPNG } from './exportGrid.js';
 
 export default function SymbolGrid() {
@@ -14,6 +15,18 @@ export default function SymbolGrid() {
   const dial = useDialKitController('Symbol grid', {
     seed: { type: 'text', default: 'draftaid', placeholder: 'Any word' },
     shuffle: { type: 'action', label: 'New seed' },
+    // Random fills each square on its own; Noise clusters the filled squares
+    seedMode: { type: 'select', options: [
+      { value: 'random', label: 'Random' },
+      { value: 'noise', label: 'Noise' },
+    ], default: 'random' },
+    noise: {
+      type: { type: 'select', options: NOISE_TYPES, default: 'perlin' },
+      scale: [0.15, 0.02, 1, 0.01],
+      octaves: [3, 1, 6, 1],
+      contrast: [0.85, 0, 1, 0.01],
+      noiseMap: { type: 'image', default: '' },
+    },
     autoShuffle: { type: 'action', label: auto ? 'Stop auto seed' : 'Auto seed' },
     every: [0.6, 0.1, 3, 0.05],
     exportSvg: { type: 'action', label: 'Copy SVG' },
@@ -95,6 +108,42 @@ export default function SymbolGrid() {
   const [fontsReady, setFontsReady] = useState(false);
   useEffect(() => { document.fonts.ready.then(() => setFontsReady(true)); }, []);
 
+  // Noise value per square; Fill picks the cut-off, so Fill still sets how much is filled
+  const noiseFill = useMemo(() => {
+    if (p.seedMode !== 'noise') return null;
+    const { columns, rows, fill } = p.grid;
+    const noise = makeNoise(p.noise.type, hashSeed((p.seed || ' ') + '#noise'));
+    const jitter = mulberry32(hashSeed((p.seed || ' ') + '#jitter'));
+    const v = [];
+    for (let r = 0; r < rows; r++) for (let c = 0; c < columns; c++) {
+      v.push(fbm(noise, (c + 0.5) * p.noise.scale, (r + 0.5) * p.noise.scale, p.noise.octaves) + (jitter() - 0.5) * (1 - p.noise.contrast));
+    }
+    const cut = [...v].sort((a, b) => b - a)[Math.max(0, Math.round(fill * v.length) - 1)];
+    return v.map((n) => fill > 0 && n >= cut);
+  }, [p.seedMode, p.seed, p.grid.columns, p.grid.rows, p.grid.fill, p.noise.type, p.noise.scale, p.noise.octaves, p.noise.contrast]);
+
+  // Live picture of the noise map for the panel
+  useEffect(() => {
+    const { columns, rows } = p.grid;
+    const noise = makeNoise(p.noise.type, hashSeed((p.seed || ' ') + '#noise'));
+    const W = 240, H = Math.max(40, Math.min(240, Math.round((W * rows) / columns)));
+    const cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext('2d'), img = ctx.createImageData(W, H);
+    const vals = new Float32Array(W * H);
+    let lo = Infinity, hi = -Infinity;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const n = fbm(noise, (x / W) * columns * p.noise.scale, (y / H) * rows * p.noise.scale, p.noise.octaves);
+      vals[y * W + x] = n; lo = Math.min(lo, n); hi = Math.max(hi, n);
+    }
+    for (let i = 0; i < vals.length; i++) {
+      const g = Math.round(((vals[i] - lo) / (hi - lo || 1)) * 255);
+      img.data.set([g, g, g, 255], i * 4);
+    }
+    ctx.putImageData(img, 0, 0);
+    dial.setValue('noise.noiseMap', cv.toDataURL('image/png'));
+  }, [p.seed, p.grid.columns, p.grid.rows, p.noise.type, p.noise.scale, p.noise.octaves]);
+
   const cells = useMemo(() => {
     const rand = mulberry32(hashSeed(p.seed || ' '));
     const full = p.symbols.set === 'all' ? [...ARTICLE, ...GDT] : ARTICLE;
@@ -102,7 +151,8 @@ export default function SymbolGrid() {
     const set = picked.length ? picked : full;
     const out = [];
     for (let i = 0; i < p.grid.columns * p.grid.rows; i++) {
-      const filled = rand() < p.grid.fill;
+      const roll = rand(); // always drawn, so colors and symbols match between modes
+      const filled = noiseFill ? noiseFill[i] : roll < p.grid.fill;
       out.push({
         filled,
         color: Math.floor(rand() * 4),
@@ -112,7 +162,7 @@ export default function SymbolGrid() {
       });
     }
     return out;
-  }, [p.seed, p.grid.columns, p.grid.rows, p.grid.fill, p.symbols.set, JSON.stringify(p.pickSymbols)]);
+  }, [p.seed, p.grid.columns, p.grid.rows, p.grid.fill, p.symbols.set, JSON.stringify(p.pickSymbols), noiseFill]);
 
   // Some filled squares become callouts that take over the squares to their right.
   // Own random stream, so symbols stay put when callouts change

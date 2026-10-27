@@ -7,6 +7,7 @@ import DrawingTab from './DrawingTab.jsx';
 import CursorGrid from './CursorGrid.jsx';
 import PartsGrid from './PartsGrid.jsx';
 import AxisView from './AxisView.jsx';
+import TetrisGrid from './TetrisGrid.jsx';
 
 const TABS = [
   { id: 'grid', label: 'Symbol grid' },
@@ -17,6 +18,7 @@ const TABS = [
   { id: 'cursor', label: 'Cursor grid' },
   { id: 'parts', label: 'Shape grid' },
   { id: 'axis', label: 'Axis view' },
+  { id: 'tetris', label: 'Tetris' },
 ];
 const read = () => (TABS.some((t) => `#${t.id}` === location.hash) ? location.hash.slice(1) : 'grid');
 
@@ -37,7 +39,7 @@ export default function App() {
           </a>
         ))}
       </nav>
-      {tab === 'grid' ? <SymbolGrid /> : tab === 'shape' ? <ShapeGrid /> : tab === 'hero' ? <HeroTab /> : tab === 'reel' ? <Showreel /> : tab === 'drawing' ? <DrawingTab /> : tab === 'cursor' ? <CursorGrid /> : tab === 'axis' ? <AxisView /> : <PartsGrid />}
+      {tab === 'grid' ? <SymbolGrid /> : tab === 'shape' ? <ShapeGrid /> : tab === 'hero' ? <HeroTab /> : tab === 'reel' ? <Showreel /> : tab === 'drawing' ? <DrawingTab /> : tab === 'cursor' ? <CursorGrid /> : tab === 'axis' ? <AxisView /> : tab === 'tetris' ? <TetrisGrid /> : <PartsGrid />}
     </>
   );
 }

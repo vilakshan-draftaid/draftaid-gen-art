@@ -283,3 +283,9 @@ canvas { display: block; max-width: 100%; }
 .callout i { position: absolute; font-style: normal; white-space: nowrap; transform: translateY(-50%); }
 .callout i span { display: block; }
 .callout b { position: absolute; height: 0.07em; background: currentColor; }
+
+/* Symbol grid: the noise map image control doubles as a large preview */
+.dialkit-image-control[aria-label^="Choose noise map"] { height: auto; flex-wrap: wrap; padding: 8px 12px 10px; row-gap: 8px; }
+.dialkit-image-control[aria-label^="Choose noise map"] .dialkit-image-value { display: none; }
+.dialkit-image-control[aria-label^="Choose noise map"] .dialkit-image-thumbnail { flex: 1 1 100%; height: 120px; }
+.dialkit-image-control[aria-label^="Choose noise map"] .dialkit-image-thumbnail img { width: 100%; height: 100%; object-fit: fill; image-rendering: auto; }
