@@ -23,9 +23,9 @@ function logoTexture(src, onLoad) {
   return textures.get(src);
 }
 
-// Isometric 3D puzzle pieces, fine lines and flat faces in three looks:
-// Line only (white faces), Tonal mono (one hue, a shade per face direction) and
-// Mono + accent (grey pieces with a few in the accent hue)
+// Isometric 3D puzzle pieces in a line-only look: white faces, faint grey sides and fine
+// lines. Pieces carrying a CAD logo take that brand's color, or grey while coming soon.
+// Click a piece to place a logo, drag it up or down to set its height
 const ISO_ELEVATION = Math.atan(1 / Math.SQRT2); // true isometric
 
 // Top, left and right face colors from one base color
@@ -58,27 +58,22 @@ export default function IsoPuzzle() {
       tabDepth: [0.2, 0.05, 0.35, 0.01],
       height: [0.6, 0.05, 3, 0.01],
       heightVariation: [0.5, 0, 1, 0.01],
+      // Drag a piece up or down to set its own height; saved here
+      heights: { type: 'text', default: '{}' },
+      resetHeights: { type: 'action', label: 'Reset heights' },
     },
     look: {
-      style: { type: 'select', options: [
-        { value: 'line', label: 'Line only' },
-        { value: 'tonal', label: 'Tonal mono' },
-        { value: 'accent', label: 'Mono + accent' },
-      ], default: 'line' },
       lines: true,
       lineColor: '#1A1A1A',
       lineWidth: [1, 0.5, 3, 0.1],
       faceColor: '#FFFFFF',
-      tonalColor: '#F6B9A2',
-      accentColor: '#6E3BF5',
-      accentPieces: [1, 0, 16, 1],
       background: '#FFFFFF',
     },
     // CAD logos on the pieces: pick one in Place Logo, then click a piece
     logos: {
       placeLogo: { type: 'select', options: [...LOGOS.map((l) => ({ value: l.id, label: l.label })), { value: 'none', label: 'Clear a piece' }], default: 'inventor' },
       placements: { type: 'text', default: DEFAULT_PLACEMENTS },
-      size: [0.6, 0.2, 0.9, 0.01],
+      size: [0.9, 0.2, 1, 0.01],
       supportedLogo: '#FFFFFF',
       comingSoonPiece: '#C8C8C8',
       comingSoonLogo: '#FFFFFF',
@@ -96,6 +91,7 @@ export default function IsoPuzzle() {
     onAction: (a) => {
       const key = String(a).split('.').pop();
       if (key === 'shuffle') ctrl.current?.setValue('seed', Math.random().toString(36).slice(2, 8));
+      if (key === 'resetHeights') ctrl.current?.setValue('pieces.heights', '{}');
       if (key === 'exportSvg' || key === 'exportPng') exportRef.current?.(key === 'exportSvg' ? 'svg' : 'png');
     },
   });
@@ -104,6 +100,9 @@ export default function IsoPuzzle() {
 
   const hostRef = useRef(null);
   const three = useRef(null);
+  // The piece height being dragged right now ({ index: height }), redrawn live
+  const liveHeight = useRef(null);
+  const [dragTick, setDragTick] = useState(0);
 
   // Renderer, camera and scene, made once
   useEffect(() => {
@@ -133,14 +132,16 @@ export default function IsoPuzzle() {
     part.traverse((o) => { o.geometry?.dispose(); o.material?.dispose?.(); });
     part.clear();
 
-    const look = p.look.style;
-    const base = look === 'tonal' ? p.look.tonalColor : look === 'accent' ? '#E6E6E6' : p.look.faceColor;
-    const mono = shades(base, look === 'line' ? 'line' : 'tonal');
-    const accent = shades(p.look.accentColor, 'tonal');
+    // Line only: white faces with faint grey sides
+    const mono = shades(p.look.faceColor, 'line');
     const pieces = isoPieces({
       cols: p.pieces.columns, rows: p.pieces.rows, seed: hashSeed(p.seed || ' '),
-      height: p.pieces.height, variation: p.pieces.heightVariation, accent: look === 'accent' ? p.look.accentPieces : 0,
+      height: p.pieces.height, variation: p.pieces.heightVariation, accent: 0,
     });
+    // Heights you dragged win over the seeded ones
+    let heights = {};
+    try { heights = { ...JSON.parse(p.pieces.heights || '{}'), ...(liveHeight.current ?? {}) }; } catch { /* keep seeded */ }
+    pieces.forEach((pc, i) => { if (heights[i] !== undefined) pc.height = heights[i]; });
     const opts = { tab: p.pieces.tabWidth, depth: p.pieces.tabDepth, round: p.pieces.tabShape === 'round' };
     let placements = {};
     try { placements = JSON.parse(p.logos.placements || '{}'); } catch { /* keep none */ }
@@ -156,7 +157,7 @@ export default function IsoPuzzle() {
       const logo = LOGOS.find((l) => l.id === placements[index]);
       const on = logo && p.supported?.[logo.id];
       // A logo's piece: its brand color when supported, greyed out when coming soon
-      const set = logo ? shades(on ? p.brandColors?.[logo.id] ?? BRAND[logo.id] : p.logos.comingSoonPiece, 'tonal') : pc.accent ? accent : mono;
+      const set = logo ? shades(on ? p.brandColors?.[logo.id] ?? BRAND[logo.id] : p.logos.comingSoonPiece, 'tonal') : mono;
       const mat = new THREE.ShaderMaterial({
         uniforms: { top: { value: new THREE.Color(set[0]) }, left: { value: new THREE.Color(set[1]) }, right: { value: new THREE.Color(set[2]) }, rightDir: { value: right } },
         vertexShader: 'varying vec3 vN; void main() { vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
@@ -173,12 +174,17 @@ export default function IsoPuzzle() {
         part.add(lines);
       }
       if (logo) {
-        // Flat on the top face, reading along the X edge; fits the piece with room for its tabs
-        let w = p.logos.size, h = w / logo.aspect;
-        if (h > 0.5) { h = 0.5; w = h * logo.aspect; }
+        // Flat on the top face, reading along the X edge, inside the area no notch cuts into:
+        // only sides with a notch are inset (knobs stick outward), plus a small margin.
+        // Size is how much of that free width it takes
+        const d = p.pieces.tabDepth, m = 0.08;
+        const x0 = pc.c + (pc.edges.left < 0 ? d : 0) + m, x1 = pc.c + 1 - (pc.edges.right < 0 ? d : 0) - m;
+        const z0 = pc.r + (pc.edges.top < 0 ? d : 0) + m, z1 = pc.r + 1 - (pc.edges.bottom < 0 ? d : 0) - m;
+        let w = (x1 - x0) * p.logos.size, h = w / logo.aspect;
+        if (h > z1 - z0) { h = z1 - z0; w = h * logo.aspect; }
         const plane = new THREE.PlaneGeometry(w, h);
         plane.rotateX(-Math.PI / 2);
-        plane.translate(pc.c + 0.5, pc.height + 0.002, pc.r + 0.5);
+        plane.translate((x0 + x1) / 2, pc.height + 0.002, (z0 + z1) / 2);
         const lm = new THREE.MeshBasicMaterial({
           map: logoTexture(logo.src, () => T.draw?.()), color: on ? p.logos.supportedLogo : p.logos.comingSoonLogo,
           transparent: true, depthWrite: false, alphaTest: 0.05,
@@ -218,23 +224,54 @@ export default function IsoPuzzle() {
       T.renderer.render(T.scene, T.camera);
     };
     T.draw();
-  }, [JSON.stringify(p.pieces), JSON.stringify(p.look), JSON.stringify(p.view), JSON.stringify(p.logos), JSON.stringify(p.supported), JSON.stringify(p.brandColors), p.seed]);
+  }, [JSON.stringify(p.pieces), JSON.stringify(p.look), JSON.stringify(p.view), JSON.stringify(p.logos), JSON.stringify(p.supported), JSON.stringify(p.brandColors), p.seed, dragTick]);
 
-  // Click a piece to put the chosen logo on it (a logo lives on one piece at a time)
-  const onClick = (e) => {
+  // Press on a piece: a click puts the chosen logo on it, a vertical drag raises or lowers it
+  const pieceAt = (x, y) => {
     const T = three.current;
-    if (!T) return;
     const box = T.renderer.domElement.getBoundingClientRect();
     const ray = new THREE.Raycaster();
-    ray.setFromCamera(new THREE.Vector2(((e.clientX - box.left) / box.width) * 2 - 1, -((e.clientY - box.top) / box.height) * 2 + 1), T.camera);
-    const hit = ray.intersectObjects(T.part.children.filter((o) => o.userData.index !== undefined))[0];
+    ray.setFromCamera(new THREE.Vector2(((x - box.left) / box.width) * 2 - 1, -((y - box.top) / box.height) * 2 + 1), T.camera);
+    return ray.intersectObjects(T.part.children.filter((o) => o.userData.index !== undefined))[0]?.object;
+  };
+  const onPointerDown = (e) => {
+    const T = three.current;
+    if (!T) return;
+    const hit = pieceAt(e.clientX, e.clientY);
     if (!hit) return;
-    let placements = {};
-    try { placements = JSON.parse(p.logos.placements || '{}'); } catch { /* start fresh */ }
-    const id = p.logos.placeLogo, index = hit.object.userData.index;
-    for (const k of Object.keys(placements)) if (placements[k] === id) delete placements[k];
-    if (id === 'none') delete placements[index]; else placements[index] = id;
-    dial.setValue('logos.placements', JSON.stringify(placements));
+    e.preventDefault();
+    const index = hit.object?.userData.index ?? hit.userData.index;
+    const start = hit.geometry.boundingBox ?? (hit.geometry.computeBoundingBox(), hit.geometry.boundingBox);
+    const h0 = start.max.y; // the piece's current height, in piece units
+    // Screen pixels per piece unit of height: the camera looks down at the iso angle
+    const pxPerUnit = (T.size[1] / (T.camera.top - T.camera.bottom)) * 100 * Math.cos(ISO_ELEVATION);
+    const y0 = e.clientY;
+    let dragging = false;
+    const move = (ev) => {
+      if (!dragging && Math.abs(ev.clientY - y0) < 4) return;
+      dragging = true;
+      const h = Math.max(0.05, Math.min(4, Math.round((h0 + (y0 - ev.clientY) / pxPerUnit) * 100) / 100));
+      liveHeight.current = { [index]: h };
+      setDragTick((n) => n + 1);
+    };
+    const up = () => {
+      removeEventListener('pointermove', move); removeEventListener('pointerup', up);
+      if (dragging) {
+        let saved = {};
+        try { saved = JSON.parse(p.pieces.heights || '{}'); } catch { /* start fresh */ }
+        const next = { ...saved, ...liveHeight.current };
+        liveHeight.current = null;
+        dial.setValue('pieces.heights', JSON.stringify(next));
+        return;
+      }
+      let placements = {};
+      try { placements = JSON.parse(p.logos.placements || '{}'); } catch { /* start fresh */ }
+      const id = p.logos.placeLogo;
+      for (const k of Object.keys(placements)) if (placements[k] === id) delete placements[k];
+      if (id === 'none') delete placements[index]; else placements[index] = id;
+      dial.setValue('logos.placements', JSON.stringify(placements));
+    };
+    addEventListener('pointermove', move); addEventListener('pointerup', up);
   };
 
   exportRef.current = async (kind) => {
@@ -263,7 +300,7 @@ export default function IsoPuzzle() {
 
   return (
     <main className="iso-stage" style={{ background: p.look.background }}>
-      <div ref={hostRef} className="iso-host" role="img" aria-label="Isometric 3D puzzle pieces connecting together, with CAD logos on them" onClick={onClick} />
+      <div ref={hostRef} className="iso-host" role="img" aria-label="Isometric 3D puzzle pieces connecting together, with CAD logos on them" onPointerDown={onPointerDown} />
       <p className="reel-toast" role="status" aria-live="polite">{status}</p>
     </main>
   );
