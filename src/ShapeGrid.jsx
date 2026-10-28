@@ -1,13 +1,14 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { useDialKitController } from 'dialkit';
-import { usePaletteSync } from './usePaletteSync.js';
+import { usePaletteSync, paletteSlots, paletteAction, PaletteRows } from './usePaletteSync.js';
 import { ARTICLE, GDT, SYMBOL_PICK, hashSeed, mulberry32, FONT } from './shared.js';
 import { buildModel } from './models.js';
 
 const LIGHT = new THREE.Vector3(0.45, 0.75, 0.5).normalize();
 
 export default function ShapeGrid() {
+  const dialRef = useRef(null);
   const dial = useDialKitController('Pixel shape', {
     shape: { type: 'select', options: [
       { value: 'bracket', label: 'Drawing 13 bracket' },
@@ -52,10 +53,11 @@ export default function ShapeGrid() {
         { value: 'draftaidDark', label: 'Draftaid Dark' },
         { value: 'custom', label: 'Custom' },
       ], default: 'plot' },
-      c1: '#3E8EDE', c2: '#F5C518', c3: '#3DBE5A', c4: '#8FD694',
+      ...paletteSlots(['#3E8EDE', '#F5C518', '#3DBE5A', '#8FD694']),
       background: '#FFFFFF',
     },
-  }, { id: 'pixel-shape', persist: true });
+  }, { id: 'pixel-shape', persist: true, onAction: (a) => paletteAction(a, dialRef.current) });
+  dialRef.current = dial;
 
   const p = dial.values;
   const palette = usePaletteSync(dial);
@@ -141,7 +143,7 @@ export default function ShapeGrid() {
           }
           n.set(buf[i] / 127.5 - 1, buf[i + 1] / 127.5 - 1, buf[i + 2] / 127.5 - 1).normalize();
           const shade = Math.max(0, n.dot(LIGHT));
-          ctx.fillStyle = colors[Math.min(3, Math.floor(shade * 4))];
+          ctx.fillStyle = colors[Math.min(colors.length - 1, Math.floor(shade * colors.length))]; // shade bands, one per color
           ctx.fillRect(x, y, inner, inner);
           if (showText) {
             ctx.fillStyle = v.symbols.ink;
@@ -161,6 +163,7 @@ export default function ShapeGrid() {
 
   return (
     <main className="stage" style={{ background: p.color.background }}>
+      <PaletteRows count={palette.length} />
       <canvas ref={canvasRef} role="img" aria-label="Rotating CAD part drawn as a grid of symbol pixels" />
     </main>
   );

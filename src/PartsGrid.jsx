@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDialKitController } from 'dialkit';
 import { hashSeed, mulberry32 } from './shared.js';
-import { usePaletteSync } from './usePaletteSync.js';
+import { usePaletteSync, paletteSlots, paletteAction, PaletteRows, MAX_COLORS } from './usePaletteSync.js';
 import { copySVG, copyPNG } from './exportGrid.js';
 import { PARTS } from './partsData.js';
 
 const hexRgb = (h) => { const n = parseInt(h.replace('#', ''), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((x) => x / 255); };
-const SLOT = [{ value: 'c1', label: 'C1' }, { value: 'c2', label: 'C2' }, { value: 'c3', label: 'C3' }, { value: 'c4', label: 'C4' }];
+const SLOT = Array.from({ length: MAX_COLORS }, (_, i) => ({ value: `c${i + 1}`, label: `C${i + 1}` }));
 
 export default function PartsGrid() {
   const ctrl = useRef(null);
@@ -57,12 +57,13 @@ export default function PartsGrid() {
       palette: { type: 'select', options: [
         { value: 'plot', label: 'Plot' }, { value: 'draftaid', label: 'Draftaid' }, { value: 'draftaidDark', label: 'Draftaid Dark' }, { value: 'custom', label: 'Custom' },
       ], default: 'draftaid' },
-      c1: '#C6FFE6', c2: '#4DFFC6', c3: '#00E8AD', c4: '#009878',
+      ...paletteSlots(['#C6FFE6', '#4DFFC6', '#00E8AD', '#009878']),
       background: '#FFFFFF',
     },
   }, {
     id: 'shape-grid', persist: true,
     onAction: (a) => {
+      paletteAction(a, ctrl.current);
       const key = a.split('.').pop();
       if (key === 'shuffle') ctrl.current?.setValue('seed', Math.random().toString(36).slice(2, 8));
       if (key === 'autoShuffle') setAuto((on) => !on);
@@ -97,20 +98,21 @@ export default function PartsGrid() {
         for (let y = r; y < r + N && free; y++) for (let x = c; x < c + N; x++) if (taken[y * cols + x]) { free = false; break; }
         if (!free) continue;
         for (let y = r; y < r + N; y++) for (let x = c; x < c + N; x++) taken[y * cols + x] = 1;
-        bigs.push({ c, r, n: N, img: pool[b % pool.length], color: Math.floor(rand() * 4), rot: Math.floor(rand() * 4) });
+        bigs.push({ c, r, n: N, img: pool[b % pool.length], color: Math.floor(rand() * colors.length), rot: Math.floor(rand() * 4) });
         break;
       }
     }
     const cells = [];
     for (let i = 0; i < cols * rows; i++) {
-      const filled = rand() < fill, part = Math.floor(rand() * PARTS.small.length), color = Math.floor(rand() * 4), rot = Math.floor(rand() * 4);
+      const filled = rand() < fill, part = Math.floor(rand() * PARTS.small.length), color = Math.floor(rand() * colors.length), rot = Math.floor(rand() * 4);
       if (taken[i]) continue;
       cells.push({ c: i % cols, r: Math.floor(i / cols), filled, part, color, rot });
     }
     return { bigs, cells };
-  }, [p.seed, cols, rows, fill, p.big.count, p.big.size, p.big.use]);
+  }, [p.seed, cols, rows, fill, p.big.count, p.big.size, p.big.use, colors.length]);
 
-  const slot = (s) => (s === 'ink' ? p.parts.ink : s === 'white' ? '#FFFFFF' : colors[Number(s.slice(1)) - 1]);
+  // Slots past the count still keep their color, so a duotone pick never goes blank
+  const slot = (s) => (s === 'ink' ? p.parts.ink : s === 'white' ? '#FFFFFF' : p.color[s] ?? colors[0]);
   const [dr, dg, db] = hexRgb(slot(p.parts.duoShadow));
   const [lr, lg, lb] = hexRgb(slot(p.parts.duoLight));
   const look = p.parts.look;
@@ -143,6 +145,7 @@ export default function PartsGrid() {
 
   return (
     <main className="stage" style={{ background: p.color.background }}>
+      <PaletteRows count={colors.length} />
       <svg ref={svgRef} xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="sg-svg" role="img" aria-label="Grid of machined parts">
         <defs>
           <filter id="sg-duo" colorInterpolationFilters="sRGB">
@@ -159,7 +162,7 @@ export default function PartsGrid() {
               <feFuncB type="table" tableValues={`${db} ${lb}`} />
             </feComponentTransfer>
           </filter>
-          {['ink', 0, 1, 2, 3].map((k) => (
+          {['ink', ...colors.keys()].map((k) => (
             <filter key={k} id={`sg-sil-${k}`} colorInterpolationFilters="sRGB">
               <feFlood floodColor={k === 'ink' ? p.parts.ink : colors[k]} />
               <feComposite in2="SourceAlpha" operator="in" />

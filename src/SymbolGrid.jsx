@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDialKitController } from 'dialkit';
 
 import { ARTICLE, GDT, SYMBOL_PICK, hashSeed, mulberry32 } from './shared.js';
-import { usePaletteSync } from './usePaletteSync.js';
+import { usePaletteSync, paletteSlots, paletteAction, PaletteRows } from './usePaletteSync.js';
 import { NUMBER_STYLES, makeCallout, placeCallout } from './callouts.js';
 import { NOISE_TYPES, makeNoise, fbm } from './noise.js';
 import { layoutGrid, toSVG, toPNG, copySVG, copyPNG } from './exportGrid.js';
@@ -79,13 +79,14 @@ export default function SymbolGrid() {
         { value: 'draftaidDark', label: 'Draftaid Dark' },
         { value: 'custom', label: 'Custom' },
       ], default: 'plot' },
-      c1: '#3E8EDE', c2: '#F5C518', c3: '#3DBE5A', c4: '#8FD694',
+      ...paletteSlots(['#3E8EDE', '#F5C518', '#3DBE5A', '#8FD694']),
       background: '#FFFFFF',
     },
   }, {
     id: 'symbol-grid',
     persist: true,
     onAction: (a) => {
+      paletteAction(a, ctrl.current);
       if (a === 'shuffle') ctrl.current?.setValue('seed', Math.random().toString(36).slice(2, 8));
       if (a === 'autoShuffle') setAuto((on) => !on);
       if (a === 'exportSvg' || a === 'exportPng') exportRef.current?.(a === 'exportSvg' ? 'svg' : 'png');
@@ -155,14 +156,14 @@ export default function SymbolGrid() {
       const filled = noiseFill ? noiseFill[i] : roll < p.grid.fill;
       out.push({
         filled,
-        color: Math.floor(rand() * 4),
+        color: Math.floor(rand() * colors.length),
         symbol: set[Math.floor(rand() * set.length)],
         dx: rand() * 2 - 1,
         dy: rand() * 2 - 1,
       });
     }
     return out;
-  }, [p.seed, p.grid.columns, p.grid.rows, p.grid.fill, p.symbols.set, JSON.stringify(p.pickSymbols), noiseFill]);
+  }, [p.seed, p.grid.columns, p.grid.rows, p.grid.fill, p.symbols.set, JSON.stringify(p.pickSymbols), noiseFill, colors.length]);
 
   // Some filled squares become callouts that take over the squares to their right.
   // Own random stream, so symbols stay put when callouts change
@@ -206,6 +207,7 @@ export default function SymbolGrid() {
 
   return (
     <main className="stage" style={{ background: p.color.background }}>
+      <PaletteRows count={colors.length} />
       <div
         className="grid"
         role="img"

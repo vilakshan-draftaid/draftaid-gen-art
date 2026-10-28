@@ -78,3 +78,22 @@ export const cskFront = (d, D, t) => [[d / 2, 0], [d / 2, t - (D - d) / 2], [D /
 export const cskBack = (d, D, t) => [[D / 2, 0], [d / 2, (D - d) / 2], [d / 2, t]];
 export const chamferFront = (d, c, t) => [[d / 2, 0], [d / 2, t - c], [d / 2 + c, t]];
 export const chamferBack = (d, c, t) => [[d / 2 + c, 0], [d / 2, c], [d / 2, t]];
+
+// A turned part: profile [[r, x], ...] revolved around the X axis, one flat-shaded band per
+// segment so steps and chamfers stay crisp. Start and end the profile at r = 0 to close it.
+export function turned(profile, { y = 0, z = 0, segments = 64 } = {}) {
+  const pos = [];
+  const P = (r, x, a) => [x, y + r * Math.cos(a), z + r * Math.sin(a)];
+  for (let s = 0; s < profile.length - 1; s++) {
+    const [r0, x0] = profile[s], [r1, x1] = profile[s + 1];
+    for (let k = 0; k < segments; k++) {
+      const a = (k / segments) * Math.PI * 2, b = ((k + 1) / segments) * Math.PI * 2;
+      const A = P(r0, x0, a), B = P(r1, x1, a), C = P(r1, x1, b), D = P(r0, x0, b);
+      pos.push(...A, ...C, ...B, ...A, ...D, ...C);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  return g;
+}

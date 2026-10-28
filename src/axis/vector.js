@@ -331,6 +331,14 @@ function solidFaces(lead, camera, renderer, w, h, toScreen, forward, albedo) {
         d += 'M' + P.map((p) => `${Math.round(p[0] * 100) / 100} ${Math.round(p[1] * 100) / 100}`).join('L') + 'Z';
       }
       if (!d) continue;
+      // A mesh can pick its own face colors (o.userData.shade(worldNormal) -> CSS color)
+      if (o.userData.shade) {
+        out.push({
+          d, pts, depth: depth / group.length, fill: o.userData.shade(n.clone()),
+          world: group.map((t) => tris[t].map((k) => world[k])), screen: group.map((t) => tris[t].map((k) => screen[k])),
+        });
+        continue;
+      }
       // three's Lambert: albedo / PI x (hemisphere + key . n), in linear space
       const hemi = GROUND.clone().lerp(SKY, n.y * 0.5 + 0.5).multiplyScalar(1.1);
       const light = hemi.add(new THREE.Color(1.5 * Math.max(0, n.dot(keyDir)), 1.5 * Math.max(0, n.dot(keyDir)), 1.5 * Math.max(0, n.dot(keyDir))));

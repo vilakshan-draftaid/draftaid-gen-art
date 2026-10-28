@@ -218,14 +218,29 @@ export function setAnnotationColor(anno, color, background) {
   anno.box.materials[0].color.copy(_faint.copy(bg).lerp(c, 0.2));
 }
 
-export function buildAnnotations(dims, bbox) {
+// spread scales how far dimensions sit from the part: the face each view's set lies on,
+// how far linear dimension lines stand off the part, and leader lengths
+function spreadDims(dims, bbox, spread) {
+  if (spread === 1) return dims;
+  return dims.map((d) => {
+    if (d.type === 'leader') return { ...d, len: (d.len ?? S.leader) * spread };
+    if (d.type !== 'linear') return d;
+    const perp = IN_PLANE[d.view].find((k) => k !== d.axis);
+    const lo = bbox.min[perp], hi = bbox.max[perp];
+    const at = d.at > hi ? hi + (d.at - hi) * spread : d.at < lo ? lo + (d.at - lo) * spread : d.at;
+    return { ...d, at };
+  });
+}
+
+export function buildAnnotations(dims, bbox, spread = 1) {
   const dim = bbox.getSize(V());
   setScale(Math.max(dim.x, dim.y, dim.z));
   const root = new THREE.Group();
   const sets = {};
+  const spreadOut = spreadDims(dims, bbox, spread);
   for (const view of ['x', 'y', 'z']) {
-    const face = bbox.max[view] + BOX_PAD;
-    sets[view] = buildSet(view, dims.filter((d) => d.view === view), face);
+    const face = bbox.max[view] + BOX_PAD * spread;
+    sets[view] = buildSet(view, spreadOut.filter((d) => d.view === view), face);
     root.add(sets[view].group);
   }
 

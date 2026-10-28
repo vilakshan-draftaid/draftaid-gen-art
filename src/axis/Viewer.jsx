@@ -122,13 +122,13 @@ export default function Viewer(props) {
     state.getModel = (name) => {
       if (state.models[name]) return state.models[name];
       const m = buildModel(name, surface);
-      const anno = buildAnnotations(m.dims, m.bbox);
+      const anno = buildAnnotations(m.dims, m.bbox, state.spread ?? 1);
       anno.group.position.copy(m.group.position);
       const grid = buildGrid(m.bbox, anno.radius);
       scene.add(m.group);
       annoScene.add(anno.group);
       gridScene.add(grid.group);
-      const entry = { name, part: m.group, anno, grid, halfHeight: m.radius * 1.45 };
+      const entry = { name, part: m.group, anno, grid, halfHeight: m.radius * 1.45, model: m };
       state.models[name] = entry;
       setAnnotationColor(anno, state.detailColor, state.background);
       return entry;
@@ -361,6 +361,20 @@ export default function Viewer(props) {
         camera.updateProjectionMatrix();
       }
       state.dimsInIso = p.dimsInIso;
+
+      // Dimension distance: rebuild every built model's dimensions at the new spread
+      const spread = p.dimSpread ?? 1;
+      if (spread !== state.spread) {
+        state.spread = spread;
+        for (const m of Object.values(state.models)) {
+          annoScene.remove(m.anno.group);
+          disposeAnnotations(m.anno.group);
+          m.anno = buildAnnotations(m.model.dims, m.model.bbox, spread);
+          m.anno.group.position.copy(m.model.group.position);
+          annoScene.add(m.anno.group);
+          setAnnotationColor(m.anno, state.detailColor, state.background);
+        }
+      }
 
       const u = edgePass.material.uniforms;
       state.edgesOn = p.edges.visible;

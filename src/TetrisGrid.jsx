@@ -4,17 +4,12 @@ import { useDialKitController } from 'dialkit';
 import { ARTICLE, GDT, PALETTES, hashSeed, mulberry32 } from './shared.js';
 import { tetrisLayout } from './tetris.js';
 import { copySVG, copyPNG } from './exportGrid.js';
+import { usePaletteSync, paletteSlots, paletteAction, PaletteRows } from './usePaletteSync.js';
 import { squareGeom, boardSVG, boardPNG } from './tetrisDraw.js';
 
 // Yellow, pink, orange, green, blue from the reference
 const TETRIS = ['#FFD500', '#FFC8DC', '#FF4400', '#26843F', '#0050FF'];
-// The 4-color palettes reuse their first color for the fifth slot
-const PALETTE5 = {
-  tetris: TETRIS,
-  ...Object.fromEntries(Object.entries(PALETTES).map(([k, v]) => [k, [...v, v[0]]])),
-};
-const SLOTS = ['c1', 'c2', 'c3', 'c4', 'c5'];
-const STROKE_SLOTS = ['s1', 's2', 's3', 's4', 's5'];
+const TETRIS_PALETTES = { tetris: TETRIS, ...PALETTES };
 const PALETTE_OPTIONS = [
   { value: 'tetris', label: 'Tetris' },
   { value: 'plot', label: 'Plot' },
@@ -22,24 +17,6 @@ const PALETTE_OPTIONS = [
   { value: 'draftaidDark', label: 'Draftaid Dark' },
   { value: 'custom', label: 'Custom' },
 ];
-
-// Picking a palette loads its colors; editing a color switches to Custom (mount only records it)
-function usePalette5(dial, folder, slots) {
-  const v = dial.values[folder];
-  const colors = slots.map((k) => v[k]);
-  const prev = useRef(null);
-  useEffect(() => {
-    const preset = PALETTE5[v.palette];
-    if (v.palette !== prev.current) {
-      const changed = prev.current !== null;
-      prev.current = v.palette;
-      if (changed && preset) dial.setValues({ [folder]: Object.fromEntries(slots.map((k, i) => [k, preset[i]])) });
-      return;
-    }
-    if (preset && colors.some((c, i) => c.toLowerCase() !== preset[i].toLowerCase())) dial.setValue(`${folder}.palette`, 'custom');
-  }, [v.palette, ...colors]);
-  return colors;
-}
 
 export default function TetrisGrid() {
   const ctrl = useRef(null);
@@ -74,7 +51,8 @@ export default function TetrisGrid() {
     // Stroke colors by the same slot as each piece's fill
     strokeColor: {
       palette: { type: 'select', options: PALETTE_OPTIONS, default: 'tetris' },
-      ...Object.fromEntries(STROKE_SLOTS.map((k, i) => [k, TETRIS[i]])),
+      // One stroke per fill slot, so this follows the fill palette's count
+      ...paletteSlots(TETRIS, 's', false),
     },
     board: {
       columns: [10, 4, 24, 1],
@@ -112,13 +90,14 @@ export default function TetrisGrid() {
     },
     color: {
       palette: { type: 'select', options: PALETTE_OPTIONS, default: 'tetris' },
-      ...Object.fromEntries(SLOTS.map((k, i) => [k, TETRIS[i]])),
+      ...paletteSlots(TETRIS),
       background: '#000000',
     },
   }, {
     id: 'tetris-grid',
     persist: true,
     onAction: (a) => {
+      paletteAction(a, ctrl.current);
       if (a === 'shuffle') ctrl.current?.setValue('seed', Math.random().toString(36).slice(2, 8));
       if (a === 'exportSvg' || a === 'exportPng') exportRef.current?.(a === 'exportSvg' ? 'svg' : 'png');
     },
@@ -126,8 +105,8 @@ export default function TetrisGrid() {
   ctrl.current = dial;
   const p = dial.values;
 
-  const colors = usePalette5(dial, 'color', SLOTS);
-  const strokes = usePalette5(dial, 'strokeColor', STROKE_SLOTS);
+  const colors = usePaletteSync(dial, { palettes: TETRIS_PALETTES });
+  const strokes = usePaletteSync(dial, { folder: 'strokeColor', prefix: 's', palettes: TETRIS_PALETTES, count: colors.length });
   const look = {
     fill: p.squares.fill, radius: p.squares.cornerRadius,
     stroke: { visible: p.stroke.visible, width: p.stroke.width, style: p.stroke.style, dashes: p.stroke.dashesPerSide, position: p.stroke.position },
@@ -139,9 +118,9 @@ export default function TetrisGrid() {
     const set = p.symbols.set === 'all' ? [...ARTICLE, ...GDT] : ARTICLE;
     const symRand = mulberry32(hashSeed((p.seed || ' ') + '#symbols'));
     return tetrisLayout({
-      columns: p.board.columns, rows: p.board.rows, height: p.pieces.stackHeight, falling: p.pieces.falling, fallen: p.pieces.fallingToFallen, colors: 5, rand,
+      columns: p.board.columns, rows: p.board.rows, height: p.pieces.stackHeight, falling: p.pieces.falling, fallen: p.pieces.fallingToFallen, colors: colors.length, rand,
     }).map((sq) => ({ ...sq, symbol: set[Math.floor(symRand() * set.length)] }));
-  }, [p.seed, p.board.columns, p.board.rows, p.pieces.stackHeight, p.pieces.falling, p.pieces.fallingToFallen, p.symbols.set]);
+  }, [p.seed, p.board.columns, p.board.rows, p.pieces.stackHeight, p.pieces.falling, p.pieces.fallingToFallen, p.symbols.set, colors.length]);
 
   const { columns, rows, cellSize, gap } = p.board;
   // Every square without a piece, each with its own palette color for circles
@@ -150,11 +129,11 @@ export default function TetrisGrid() {
     const rand = mulberry32(hashSeed((p.seed || ' ') + '#circles'));
     const out = [];
     for (let row = 0; row < rows; row++) for (let col = 0; col < columns; col++) {
-      const color = Math.floor(rand() * 5);
+      const color = Math.floor(rand() * colors.length);
       if (!taken.has(`${col}-${row}`)) out.push({ col, row, color });
     }
     return out;
-  }, [squares, columns, rows, p.seed]);
+  }, [squares, columns, rows, p.seed, colors.length]);
   const circles = p.empty.style === 'circles';
   const circleFill = (e) => (p.empty.circleColor === 'single' ? p.empty.single : colors[e.color]);
   // Fits the whole board in the window, never larger than the cell size dial
@@ -180,6 +159,7 @@ export default function TetrisGrid() {
 
   return (
     <main className="stage" style={{ background: p.color.background }}>
+      <PaletteRows count={colors.length} prefixes={['c', 's']} />
       <div
         className="grid"
         role="img"

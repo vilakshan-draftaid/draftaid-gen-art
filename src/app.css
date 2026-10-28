@@ -31,9 +31,13 @@ body { background: var(--page); color: var(--ink); font-family: "Inter Tight", s
 .dot { display: block; border-radius: 50%; }
 
 .tabs {
-  position: fixed; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); left: 50%; transform: translateX(-50%); z-index: 50;
-  display: flex; gap: 2px; padding: 3px; border-radius: 10px; max-width: calc(100vw - 32px); overflow-x: auto; scrollbar-width: none;
+  position: fixed; left: 16px; top: 50%; transform: translateY(-50%); z-index: 50;
+  display: flex; flex-direction: column; gap: 2px; padding: 3px; border-radius: 10px; max-height: calc(100vh - 32px); overflow-y: auto; scrollbar-width: none;
   background: var(--tab-bg); border: 1px solid var(--tab-line);
+}
+/* Phones: back to a scrolling bar along the bottom */
+@media (max-width: 720px) {
+  .tabs { left: 50%; top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); transform: translateX(-50%); flex-direction: row; max-height: none; max-width: calc(100vw - 32px); overflow-x: auto; }
 }
 .tabs a {
   white-space: nowrap;
@@ -289,3 +293,35 @@ canvas { display: block; max-width: 100%; }
 .dialkit-image-control[aria-label^="Choose noise map"] .dialkit-image-value { display: none; }
 .dialkit-image-control[aria-label^="Choose noise map"] .dialkit-image-thumbnail { flex: 1 1 100%; height: 120px; }
 .dialkit-image-control[aria-label^="Choose noise map"] .dialkit-image-thumbnail img { width: 100%; height: 100%; object-fit: fill; image-rendering: auto; }
+
+/* Integrations: logo tiles you can drag, with a resize handle in the corner */
+.logo-tile { position: relative; cursor: grab; touch-action: none; user-select: none; }
+.logo-tile[data-dragging] { cursor: grabbing; z-index: 2; outline: 2px solid #00E8AD; outline-offset: 2px; }
+.logo-tile > i { position: absolute; display: block; pointer-events: none; }
+.logo-resize { position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; opacity: 0;
+  background: linear-gradient(135deg, transparent 50%, rgba(127, 127, 127, 0.9) 50%); transition: opacity .15s; }
+.logo-tile:hover .logo-resize, .logo-tile[data-dragging] .logo-resize { opacity: 1; }
+
+/* Puzzle: board you paint on, logo tray to drag from */
+.puzzle-stage { padding-bottom: 150px; }
+.puzzle-board { display: block; max-width: calc(100vw - 32px); max-height: calc(100vh - 230px); height: auto; overflow: visible; touch-action: none; cursor: crosshair; user-select: none; }
+.puzzle-logo { cursor: grab; }
+.puzzle-logo[data-dragging] { cursor: grabbing; }
+.puzzle-resize { fill: rgba(127, 127, 127, 0.9); cursor: nwse-resize; opacity: 0; transition: opacity .15s; }
+.puzzle-logo:hover .puzzle-resize, .puzzle-logo[data-dragging] .puzzle-resize { opacity: 1; }
+.logo-tray {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); z-index: 40;
+  display: flex; gap: 6px; padding: 6px; max-width: calc(100vw - 32px); overflow-x: auto; scrollbar-width: none;
+  border-radius: 10px; background: var(--tab-bg); border: 1px solid var(--tab-line);
+}
+.logo-chip { flex: 0 0 auto; display: grid; place-items: center; height: 40px; padding: 0 12px; border: 0; border-radius: 6px; cursor: grab; touch-action: none; }
+.logo-chip i { display: block; height: 18px; }
+.logo-chip[aria-pressed="true"] { opacity: 0.4; }
+.logo-chip:focus-visible { outline: 2px solid #00E8AD; outline-offset: 2px; }
+.logo-ghost { position: fixed; z-index: 60; width: 72px; height: 28px; margin: -14px 0 0 -36px; border-radius: 4px; opacity: 0.85; pointer-events: none; }
+@media (max-width: 720px) { .logo-tray { bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); } }
+
+/* Iso puzzle: a full-window 3D view */
+.iso-stage { position: fixed; inset: 0; transition: background .2s; }
+.iso-host { position: absolute; inset: 0; }
+.iso-host canvas { display: block; }

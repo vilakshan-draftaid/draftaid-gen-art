@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { plate, thru, cboreFront, cboreBack, cskFront, cskBack, chamferFront, chamferBack } from './plate.js';
+import { plate, turned, thru, cboreFront, cboreBack, cskFront, cskBack, chamferFront, chamferBack } from './plate.js';
 
 // All dimensions in mm, taken from the reference drawings. Y is up.
 const SEG = 48;
@@ -397,6 +397,192 @@ function cylinderMount() {
   return { parts: [mergeGeometries([plateGeo, blockGeo])], dims };
 }
 
+// Plates lying flat (thickness up the Y axis): outline in (x, -z)
+const FLAT = () => new THREE.Matrix4().makeBasis(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 1, 0));
+const noUV = (g) => { g.deleteAttribute('uv'); return g; };
+
+// Imagined: 2 mm sheet metal L-bracket. Base flange flat, wall standing at the back,
+// joined by an R2 bend; slots in the base, holes and a relief in the wall
+function sheetBracket() {
+  const T = 2, R = 2, B = R + T, L = 80, D = 50, H = 60;
+  const base = plate(rrect(0, -D, L, -B), [
+    { x: 20, y: -35, profile: thru(6.5, T) },
+    { x: 60, y: -35, profile: thru(6.5, T) },
+    { x: 40, y: -20, profile: thru(10, T) },
+  ], T, { basis: FLAT() });
+  const wall = plate(rrect(0, B, L, H, [0, 0, 5, 5]), [
+    { x: 25, y: 40, profile: thru(8.5, T) },
+    { x: 55, y: 40, profile: thru(8.5, T) },
+  ], T);
+  // Quarter tube for the bend, in (u = z, v = y) around the bend center
+  const bend = new THREE.Shape();
+  bend.absarc(B, B, B, PI, PI * 1.5, false);
+  bend.absarc(B, B, R, PI * 1.5, PI, true);
+  const dims = [
+    // Z: front (looking at the wall)
+    lin('z', 'x', [0, H, 0], [L, H, 0], H + 14, '80'),
+    lin('z', 'x', [25, 40, 0], [55, 40, 0], H - 6, '30'),
+    lin('z', 'y', [L, 0, 0], [L, H, 0], L + 14, '60'),
+    lin('z', 'y', [0, 0, 0], [25, 40, 0], -12, '40'),
+    leader('z', [55, 40, 0], 4.25, 30, 'Ø8,5 (2x)'),
+    leader('z', [L - 5, H - 5, 0], 5, 45, 'R5 (2x)', { start: 45 }),
+    // X: side, the L profile
+    lin('x', 'z', [0, H, 0], [0, 0, D], H + 12, '50'),
+    lin('x', 'y', [0, 0, 0], [0, H, 0], -12, '60'),
+    lin('x', 'z', [0, H, 0], [0, H, T], H + 4, '2'),
+    leader('x', [0, B, B], R, 135, 'R2', { start: 225 }),
+    // Y: top, the base flange
+    lin('y', 'x', [20, 0, 35], [60, 0, 35], D + 12, '40'),
+    lin('y', 'z', [L, 0, 0], [60, 0, 35], L + 12, '35'),
+    lin('y', 'z', [L, 0, 0], [40, 0, 20], L + 24, '20'),
+    leader('y', [20, 0, 35], 3.25, 135, 'Ø6,5 (2x)'),
+    leader('y', [40, 0, 20], 5, 45, 'Ø10'),
+    cross('y', [20, 0, 35], 3.25), cross('y', [60, 0, 35], 3.25), cross('y', [40, 0, 20], 5),
+  ];
+  return { parts: [base, wall, noUV(extrudeX(bend, 0, L))], dims };
+}
+
+// Imagined: 40 x 40 aluminium T-slot extrusion, 120 long, a T-slot on every side
+function tslotExtrusion() {
+  const S = 40, LEN = 120, open = 8.2, neck = 4.3, head = 16, deep = 12.2;
+  // One side's outline from corner to corner, then turned for the other three
+  const side = [[0, 0], [(S - open) / 2, 0], [(S - open) / 2, neck], [(S - head) / 2, neck], [(S - head) / 2 + 2, deep],
+    [(S + head) / 2 - 2, deep], [(S + head) / 2, neck], [(S + open) / 2, neck], [(S + open) / 2, 0]];
+  const pts = [];
+  const turn = [([u, v]) => [u, v], ([u, v]) => [S - v, u], ([u, v]) => [S - u, S - v], ([u, v]) => [v, S - u]];
+  for (const t of turn) for (const p of side) pts.push(new THREE.Vector2(...t(p)));
+  const outline = new THREE.Shape(pts);
+  const profile = plate(outline, [{ x: S / 2, y: S / 2, profile: thru(6.8, LEN) }], LEN);
+  const dims = [
+    // Z: the profile
+    lin('z', 'x', [0, S, LEN], [S, S, LEN], S + 12, '40'),
+    lin('z', 'y', [S, 0, LEN], [S, S, LEN], S + 12, '40'),
+    lin('z', 'x', [(S - open) / 2, 0, LEN], [(S + open) / 2, 0, LEN], -10, '8,2'),
+    lin('z', 'y', [0, (S - head) / 2, LEN], [0, (S + head) / 2, LEN], -10, '16'),
+    leader('z', [S / 2, S / 2, LEN], 3.4, 45, 'Ø6,8', { len: 22 }),
+    cross('z', [S / 2, S / 2, LEN], 3.4),
+    // X: along the length
+    lin('x', 'z', [S, S, 0], [S, S, LEN], S + 12, '120'),
+    lin('x', 'y', [S, 0, 0], [S, S, 0], -12, '40'),
+    hidden('x', [S, S / 2 - 3.4, 0], [S, S / 2 - 3.4, LEN]),
+    hidden('x', [S, S / 2 + 3.4, 0], [S, S / 2 + 3.4, LEN]),
+    // Y: top
+    lin('y', 'x', [0, S, LEN], [S, S, LEN], LEN + 12, '40'),
+    lin('y', 'z', [S, S, 0], [S, S, LEN], S + 12, '120'),
+    center('y', [S / 2, S, -6], [S / 2, S, LEN + 6]),
+  ];
+  return { parts: [profile], dims };
+}
+
+// Imagined: turned shaft with three steps, a retaining-ring groove and chamfered ends
+function turnedShaft() {
+  const c = 1;
+  const profile = [
+    [0, 0], [8 - c, 0], [8, c], [8, 15], // Ø16 spigot
+    [10, 15], [10, 45], // Ø20 bearing seat
+    [15, 45], [15, 72], [13, 72], [13, 75], [15, 75], [15, 95], // Ø30 body with a 3 wide groove to Ø26
+    [12, 95], [12, 125 - c], [12 - c, 125], [0, 125], // Ø24 end, chamfered
+  ];
+  const dims = [
+    // Z: front, the silhouette
+    lin('z', 'x', [0, 15, 0], [125, 15, 0], 30, '125'),
+    lin('z', 'x', [0, 8, 0], [15, 8, 0], 22, '15'),
+    lin('z', 'x', [15, 10, 0], [45, 10, 0], 22, '30'),
+    lin('z', 'x', [72, -15, 0], [75, -15, 0], -24, '3'),
+    lin('z', 'x', [95, 12, 0], [125, 12, 0], 22, '30'),
+    lin('z', 'y', [7, -8, 0], [7, 8, 0], 7, 'Ø16'),
+    lin('z', 'y', [30, -10, 0], [30, 10, 0], 30, 'Ø20'),
+    lin('z', 'y', [60, -15, 0], [60, 15, 0], 60, 'Ø30'),
+    lin('z', 'y', [110, -12, 0], [110, 12, 0], 110, 'Ø24'),
+    center('z', [-6, 0, 0], [131, 0, 0]),
+    // Y: top, groove and chamfer callouts
+    leader('y', [73.5, 0, -13], 0, 120, 'Ø26 groove', { len: 26 }),
+    leader('y', [125, 0, -11.5], 0, 45, '1x45° (2x)', { len: 18 }),
+    center('y', [-6, 0, 0], [131, 0, 0]),
+    // X: end on, the stepped circles
+    leader('x', [125, 0, 0], 15, 45, 'Ø30'),
+    leader('x', [125, 0, 0], 12, 225, 'Ø24'),
+    cross('x', [125, 0, 0], 12),
+  ];
+  return { parts: [turned(profile)], dims };
+}
+
+// Imagined: turned flange hub. Ø100 flange with six bolt holes, Ø50 hub, Ø25 bore
+function flangeHub() {
+  const TF = 12, HH = 30, PCD = 76;
+  const circle = (r) => { const sh = new THREE.Shape(); sh.absarc(0, 0, r, 0, PI * 2, false); return sh; };
+  const bolts = [0, 1, 2, 3, 4, 5].map((k) => {
+    const a = (k * PI) / 3 + PI / 6;
+    return { x: (PCD / 2) * Math.cos(a), y: (PCD / 2) * Math.sin(a), profile: thru(9, TF) };
+  });
+  const flange = plate(circle(50), [{ x: 0, y: 0, profile: thru(25, TF) }, ...bolts], TF, { basis: FLAT() });
+  const hub = plate(circle(25), [{ x: 0, y: 0, profile: chamferFront(25, 1.5, HH) }], HH, {
+    basis: FLAT().premultiply(new THREE.Matrix4().makeTranslation(0, TF, 0)),
+  });
+  const bolt = [(PCD / 2) * Math.cos(PI / 6), 0, -(PCD / 2) * Math.sin(PI / 6)];
+  const dims = [
+    // Y: top, circles
+    leader('y', [0, 0, 0], 50, 135, 'Ø100'),
+    leader('y', [0, 0, 0], 25, 45, 'Ø50', { len: 24 }),
+    leader('y', [0, 0, 0], 12.5, 225, 'Ø25'),
+    leader('y', bolt, 4.5, 20, '6x Ø9'),
+    lin('y', 'x', [-PCD / 2, 0, 0], [PCD / 2, 0, 0], 62, 'Ø76 PCD'),
+    cross('y', [0, 0, 0], 50),
+    // Z: front, heights and widths
+    lin('z', 'y', [50, 0, 0], [50, TF, 0], 62, '12'),
+    lin('z', 'y', [25, 0, 0], [25, TF + HH, 0], 74, '42'),
+    lin('z', 'x', [-25, TF + HH, 0], [25, TF + HH, 0], TF + HH + 12, 'Ø50'),
+    lin('z', 'x', [-50, 0, 0], [50, 0, 0], -14, 'Ø100'),
+    hidden('z', [-12.5, 0, 0], [-12.5, TF + HH, 0]),
+    hidden('z', [12.5, 0, 0], [12.5, TF + HH, 0]),
+    center('z', [0, -6, 0], [0, TF + HH + 6, 0]),
+    // X: side
+    lin('x', 'z', [0, TF + HH, -25], [0, TF + HH, 25], TF + HH + 12, 'Ø50'),
+    lin('x', 'y', [0, 0, -50], [0, TF, -50], -62, '12'),
+    leader('x', [0, TF + HH, -12.5], 1.5, 135, '1,5x45°', { start: 135 }),
+  ];
+  return { parts: [flange, hub], dims };
+}
+
+// Imagined: milled block, 80 x 60 x 25, a Ø40 pocket over a Ø12 through bore,
+// four counterbored M6 holes and two dowel holes
+function milledBlock() {
+  const L = 80, W = 60, T = 25;
+  const holes = [
+    { x: 40, y: -30, profile: cboreFront(12, 40, 8, T) },
+    ...[[10, -10], [70, -10], [10, -50], [70, -50]].map(([x, y]) => ({ x, y, profile: cboreFront(6.6, 11, 6.4, T) })),
+    { x: 10, y: -30, profile: chamferFront(6, 0.5, T) },
+    { x: 70, y: -30, profile: chamferFront(6, 0.5, T) },
+  ];
+  const block = plate(rrect(0, -W, L, 0, 3), holes, T, { basis: FLAT() });
+  const dims = [
+    // Y: top
+    lin('y', 'x', [0, T, W], [L, T, W], W + 12, '80'),
+    lin('y', 'x', [10, T, 50], [70, T, 50], W + 2, '60'),
+    lin('y', 'z', [L, T, 0], [L, T, W], L + 24, '60'),
+    lin('y', 'z', [70, T, 10], [70, T, 50], L + 12, '40'),
+    leader('y', [40, T, 30], 20, 45, 'Ø40 ↧8'),
+    leader('y', [10, T, 10], 5.5, 135, '4x Ø6,6 ⌴Ø11'),
+    leader('y', [10, T, 30], 3, 200, '2x Ø6 H7'),
+    cross('y', [40, T, 30], 20),
+    // Z: front, heights and the pocket
+    lin('z', 'y', [L, 0, W], [L, T, W], L + 12, '25'),
+    lin('z', 'y', [0, T - 8, W], [0, T, W], -12, '8'),
+    lin('z', 'x', [20, T, W], [60, T, W], T + 10, 'Ø40'),
+    hidden('z', [20, T - 8, W], [60, T - 8, W]),
+    hidden('z', [20, T - 8, W], [20, T, W]),
+    hidden('z', [60, T - 8, W], [60, T, W]),
+    hidden('z', [34, 0, W], [34, T - 8, W]),
+    hidden('z', [46, 0, W], [46, T - 8, W]),
+    center('z', [40, -6, W], [40, T + 6, W]),
+    // X: side
+    lin('x', 'z', [L, T, 0], [L, T, W], T + 12, '60'),
+    lin('x', 'y', [L, 0, 0], [L, T, 0], -12, '25'),
+    lin('x', 'z', [L, T - 6.4, 5], [L, T - 6.4, 15], T + 4, 'Ø11'),
+  ];
+  return { parts: [block], dims };
+}
+
 export const MODELS = {
   'Gusset bracket': gussetBracket,
   'Slotted L-block': slottedBlock,
@@ -404,6 +590,11 @@ export const MODELS = {
   'Camera bracket': cameraBracket,
   'IS3800 bracket': is3800Bracket,
   'Cylinder mount': cylinderMount,
+  'Sheet metal bracket': sheetBracket,
+  'T-slot extrusion': tslotExtrusion,
+  'Turned shaft': turnedShaft,
+  'Flange hub': flangeHub,
+  'Milled block': milledBlock,
 };
 
 export function buildModel(name, material) {

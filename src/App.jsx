@@ -8,6 +8,9 @@ import CursorGrid from './CursorGrid.jsx';
 import PartsGrid from './PartsGrid.jsx';
 import AxisView from './AxisView.jsx';
 import TetrisGrid from './TetrisGrid.jsx';
+import IntegrationsGrid from './IntegrationsGrid.jsx';
+import PuzzleGrid from './PuzzleGrid.jsx';
+import IsoPuzzle from './IsoPuzzle.jsx';
 
 const TABS = [
   { id: 'grid', label: 'Symbol grid' },
@@ -19,6 +22,9 @@ const TABS = [
   { id: 'parts', label: 'Shape grid' },
   { id: 'axis', label: 'Axis view' },
   { id: 'tetris', label: 'Tetris' },
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'puzzle', label: 'Puzzle' },
+  { id: 'iso-puzzle', label: 'Iso puzzle' },
 ];
 const read = () => (TABS.some((t) => `#${t.id}` === location.hash) ? location.hash.slice(1) : 'grid');
 
@@ -39,7 +45,7 @@ export default function App() {
           </a>
         ))}
       </nav>
-      {tab === 'grid' ? <SymbolGrid /> : tab === 'shape' ? <ShapeGrid /> : tab === 'hero' ? <HeroTab /> : tab === 'reel' ? <Showreel /> : tab === 'drawing' ? <DrawingTab /> : tab === 'cursor' ? <CursorGrid /> : tab === 'axis' ? <AxisView /> : tab === 'tetris' ? <TetrisGrid /> : <PartsGrid />}
+      {tab === 'grid' ? <SymbolGrid /> : tab === 'shape' ? <ShapeGrid /> : tab === 'hero' ? <HeroTab /> : tab === 'reel' ? <Showreel /> : tab === 'drawing' ? <DrawingTab /> : tab === 'cursor' ? <CursorGrid /> : tab === 'axis' ? <AxisView /> : tab === 'tetris' ? <TetrisGrid /> : tab === 'integrations' ? <IntegrationsGrid /> : tab === 'puzzle' ? <PuzzleGrid /> : tab === 'iso-puzzle' ? <IsoPuzzle /> : <PartsGrid />}
     </>
   );
 }

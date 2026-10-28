@@ -55,7 +55,14 @@ export default function AxisView() {
       copySvg: { type: 'action', label: 'Copy SVG' },
       solidFill: false,
     },
-    dimensions: { showInIsometric: false },
+    dimensions: {
+      showInIsometric: false,
+      // 1 is the drawing's own spacing; lower pulls dimensions in, higher pushes them out
+      distance: [1, 0.2, 3, 0.01],
+      // The drafting look: no edges, no material, dimensions in every view. Your own
+      // edge, material and iso settings come back when it's off
+      dimensionsOnly: false,
+    },
     edges: { visible: true, color: THEMES.light.edges, thickness: [1, 0.5, 3, 0.1], opacity: [1, 0, 1, 0.01] },
     material: { color: THEMES.light.surface, opacity: [1, 0, 1, 0.01] },
     grid: { visible: false, color: THEMES.light.grid, opacity: [1, 0, 1, 0.01] },
@@ -114,9 +121,10 @@ export default function AxisView() {
         viewKey={viewKey}
         turn={turn}
         zoom={p.zoom}
-        edges={p.edges}
-        dimsInIso={p.dimensions.showInIsometric}
-        surface={p.material}
+        edges={p.dimensions.dimensionsOnly ? { ...p.edges, visible: false } : p.edges}
+        dimsInIso={p.dimensions.dimensionsOnly || p.dimensions.showInIsometric}
+        dimSpread={p.dimensions.distance}
+        surface={p.dimensions.dimensionsOnly ? { ...p.material, opacity: 0 } : p.material}
         grid={p.grid}
         background={p.background}
         snapToken={snapToken}
