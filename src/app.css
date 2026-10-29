@@ -46,6 +46,9 @@ body { background: var(--page); color: var(--ink); font-family: "Inter Tight", s
 }
 .tabs a[aria-current="page"] { background: var(--ink); color: var(--page); }
 .tabs a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.tabs a.tab-group.open { color: var(--ink); }
+.tabs a.tab-sub { padding-left: 24px; }
+@media (max-width: 720px) { .tabs a.tab-sub { padding-left: 12px; } }
 :root { --tab-bg: rgba(255,255,255,.85); --tab-line: rgba(0,0,0,.1); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --tab-bg: rgba(30,30,30,.85); --tab-line: rgba(255,255,255,.12); } }
 :root[data-theme="dark"] { --tab-bg: rgba(30,30,30,.85); --tab-line: rgba(255,255,255,.12); }

@@ -24,9 +24,14 @@ const TABS = [
   { id: 'tetris', label: 'Tetris' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'puzzle', label: 'Puzzle' },
-  { id: 'iso-puzzle', label: 'Iso puzzle' },
+  // A group: its sub-tabs show under it while one of them is open
+  { id: 'iso', label: 'Iso pieces', children: [
+    { id: 'iso-step', label: 'Step' },
+    { id: 'iso-puzzle', label: 'Puzzle' },
+  ] },
 ];
-const read = () => (TABS.some((t) => `#${t.id}` === location.hash) ? location.hash.slice(1) : 'grid');
+const IDS = TABS.flatMap((t) => (t.children ? t.children.map((c) => c.id) : [t.id]));
+const read = () => (IDS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'grid');
 
 export default function App() {
   const [tab, setTab] = useState(read);
@@ -38,14 +43,26 @@ export default function App() {
   return (
     <>
       <nav className="tabs" aria-label="Views">
-        {TABS.map((t) => (
-          <a key={t.id} href={`#${t.id}`} aria-current={tab === t.id ? 'page' : undefined}
-             onClick={(e) => { e.preventDefault(); setTab(t.id); history.replaceState(null, '', `#${t.id}`); }}>
-            {t.label}
-          </a>
-        ))}
+        {TABS.map((t) => {
+          const link = (id, label, cls) => (
+            <a key={id} href={`#${id}`} className={cls} aria-current={tab === id ? 'page' : undefined}
+               onClick={(e) => { e.preventDefault(); setTab(id); history.replaceState(null, '', `#${id}`); }}>
+              {label}
+            </a>
+          );
+          if (!t.children) return link(t.id, t.label);
+          // The group opens its first sub-tab; the sub-tabs list while it's open
+          const open = t.children.some((c) => c.id === tab);
+          return [
+            <a key={t.id} href={`#${t.children[0].id}`} className={open ? 'tab-group open' : 'tab-group'}
+               onClick={(e) => { e.preventDefault(); if (!open) { setTab(t.children[0].id); history.replaceState(null, '', `#${t.children[0].id}`); } }}>
+              {t.label}
+            </a>,
+            ...(open ? t.children.map((c) => link(c.id, c.label, 'tab-sub')) : []),
+          ];
+        })}
       </nav>
-      {tab === 'grid' ? <SymbolGrid /> : tab === 'shape' ? <ShapeGrid /> : tab === 'hero' ? <HeroTab /> : tab === 'reel' ? <Showreel /> : tab === 'drawing' ? <DrawingTab /> : tab === 'cursor' ? <CursorGrid /> : tab === 'axis' ? <AxisView /> : tab === 'tetris' ? <TetrisGrid /> : tab === 'integrations' ? <IntegrationsGrid /> : tab === 'puzzle' ? <PuzzleGrid /> : tab === 'iso-puzzle' ? <IsoPuzzle /> : <PartsGrid />}
+      {tab === 'grid' ? <SymbolGrid /> : tab === 'shape' ? <ShapeGrid /> : tab === 'hero' ? <HeroTab /> : tab === 'reel' ? <Showreel /> : tab === 'drawing' ? <DrawingTab /> : tab === 'cursor' ? <CursorGrid /> : tab === 'axis' ? <AxisView /> : tab === 'tetris' ? <TetrisGrid /> : tab === 'integrations' ? <IntegrationsGrid /> : tab === 'puzzle' ? <PuzzleGrid /> : tab === 'iso-puzzle' ? <IsoPuzzle key="puzzle" /> : tab === 'iso-step' ? <IsoPuzzle key="step" logos={false} /> : <PartsGrid />}
     </>
   );
 }

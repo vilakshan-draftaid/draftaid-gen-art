@@ -38,11 +38,12 @@ function shades(hex, look) {
   return [hex, at(0.04, -0.1), at(0.1, -0.2)];
 }
 
-export default function IsoPuzzle() {
+// With logos off it's the Step view: the same pieces and heights, no logo settings
+export default function IsoPuzzle({ logos = true }) {
   const ctrl = useRef(null);
   const [status, setStatus] = useState('');
   const exportRef = useRef(null);
-  const dial = useDialKitController('Iso puzzle', {
+  const dial = useDialKitController(logos ? 'Iso puzzle' : 'Iso step', {
     seed: { type: 'text', default: 'draftaid', placeholder: 'Any word' },
     shuffle: { type: 'action', label: 'New seed' },
     exportSvg: { type: 'action', label: 'Copy SVG' },
@@ -72,7 +73,7 @@ export default function IsoPuzzle() {
       background: '#FFFFFF',
     },
     // CAD logos on the pieces: pick one in Place Logo, then click a piece
-    logos: {
+    ...(logos && { logos: {
       placeLogo: { type: 'select', options: [...LOGOS.map((l) => ({ value: l.id, label: l.label })), { value: 'none', label: 'Clear a piece' }], default: 'inventor' },
       placements: { type: 'text', default: DEFAULT_PLACEMENTS },
       size: [0.9, 0.2, 1, 0.01],
@@ -84,13 +85,13 @@ export default function IsoPuzzle() {
     },
     // Supported integrations get their brand color; the rest are greyed out
     supported: Object.fromEntries(LOGOS.map((l) => [l.id, l.available])),
-    brandColors: { ...BRAND },
+    brandColors: { ...BRAND } }),
     view: {
       turn: [45, 0, 360, 1],
       zoom: [1, 0.4, 2.5, 0.01],
     },
   }, {
-    id: 'iso-puzzle',
+    id: logos ? 'iso-puzzle' : 'iso-step',
     persist: true,
     onAction: (a) => {
       const key = String(a).split('.').pop();
@@ -149,7 +150,7 @@ export default function IsoPuzzle() {
     pieces.forEach((pc, i) => { if (heights[i] !== undefined) pc.height = heights[i]; });
     const opts = { tab: p.pieces.tabWidth, depth: p.pieces.tabDepth, round: p.pieces.tabShape === 'round' };
     let placements = {};
-    try { placements = JSON.parse(p.logos.placements || '{}'); } catch { /* keep none */ }
+    try { placements = JSON.parse(p.logos?.placements || '{}'); } catch { /* keep none */ }
 
     // Face color from the normal as seen by the camera: up faces, then left or right
     const right = new THREE.Vector3();
@@ -272,6 +273,7 @@ export default function IsoPuzzle() {
         dial.setValue('pieces.heights', JSON.stringify(next));
         return;
       }
+      if (!logos) return;
       let placements = {};
       try { placements = JSON.parse(p.logos.placements || '{}'); } catch { /* start fresh */ }
       const id = p.logos.placeLogo;
@@ -286,7 +288,7 @@ export default function IsoPuzzle() {
   exportRef.current = async (kind, save = false) => {
     const T = three.current;
     if (!T) return;
-    const name = `iso-puzzle-${p.seed || 'seed'}.${kind}`;
+    const name = `iso-${logos ? 'puzzle' : 'step'}-${p.seed || 'seed'}.${kind}`;
     let job;
     if (kind === 'png') {
       T.draw();
@@ -310,7 +312,7 @@ export default function IsoPuzzle() {
 
   return (
     <main className="iso-stage" style={{ background: p.look.background }}>
-      <div ref={hostRef} className="iso-host" role="img" aria-label="Isometric 3D puzzle pieces connecting together, with CAD logos on them" onPointerDown={onPointerDown} />
+      <div ref={hostRef} className="iso-host" role="img" aria-label={logos ? 'Isometric 3D puzzle pieces connecting together, with CAD logos on them' : 'Isometric 3D puzzle pieces connecting together at different heights'} onPointerDown={onPointerDown} />
       <p className="reel-toast" role="status" aria-live="polite">{status}</p>
     </main>
   );
