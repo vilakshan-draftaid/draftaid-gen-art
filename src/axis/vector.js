@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import polygonClipping from 'polygon-clipping';
 
 // Vector snapshot: rebuilds what's on screen as SVG paths and text, so it pastes
 // into Figma as editable layers. Part edges are creases, boundaries and
@@ -113,7 +114,8 @@ export function vectorSnapshot({ renderer, scene, camera, w, h, lead, edges, fac
 
   // Part edges
   const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-  const segs = [];
+  // Edge runs grouped by color: a mesh can set its own (o.userData.edgeColor)
+  const segsByColor = new Map();
   const nm = new THREE.Matrix3();
   lead.part.traverse((o) => {
     if (!o.isMesh) return;
@@ -121,6 +123,9 @@ export function vectorSnapshot({ renderer, scene, camera, w, h, lead, edges, fac
     nm.getNormalMatrix(o.matrixWorld);
     const facing = normals.map((n) => n.clone().applyMatrix3(nm).dot(forward) < 0);
     const wa = new THREE.Vector3(), wb = new THREE.Vector3();
+    const color = o.userData.edgeColor ?? edges.color;
+    if (!segsByColor.has(color)) segsByColor.set(color, []);
+    const segs = segsByColor.get(color);
     for (const e of list) {
       // Where pieces meet flush, an edge carries two faces that continue flat: not a real edge
       if (e.tris.length > 2 && e.tris.some((a, i) => e.tris.some((b, j) => j > i && normals[a].dot(normals[b]) > 0.999))) continue;
@@ -142,17 +147,23 @@ export function vectorSnapshot({ renderer, scene, camera, w, h, lead, edges, fac
   if (faces) {
     const paths = solidFaces(lead, camera, renderer, w, h, toScreen, forward, faces.color).map((f) => {
       f.pts.forEach((p) => grow(p[0], p[1]));
-      return `<path fill="${f.fill}" fill-rule="evenodd" d="${f.d}"/>`;
+      // A hairline stroke in the face's own color closes the antialiasing slivers where
+      // neighbouring faces meet, so the background doesn't show through along edges
+      return `<path fill="${f.fill}" stroke="${f.fill}" stroke-width="0.6" stroke-linejoin="round" fill-rule="evenodd" d="${f.d}"/>`
+        + (f.clipId ? `<clipPath id="${f.clipId}"><path clip-rule="evenodd" d="${f.d}"/></clipPath>` : '');
     });
     if (paths.length) layers.push(`<g id="Faces"${faces.opacity < 0.999 ? ` opacity="${r(faces.opacity)}"` : ''}>${paths.join('')}</g>`);
   }
   if (edges.visible && edges.opacity > 0.001) {
-    const d = chain(segs).map((pts) => {
-      pts.forEach((p) => grow(p[0], p[1]));
-      return 'M' + pts.map((p) => `${r(p[0])} ${r(p[1])}`).join('L');
+    const paths = [...segsByColor].filter(([, segs]) => segs.length).map(([color, segs]) => {
+      const d = chain(segs).map((pts) => {
+        pts.forEach((p) => grow(p[0], p[1]));
+        return 'M' + pts.map((p) => `${r(p[0])} ${r(p[1])}`).join('L');
+      });
+      return `<path stroke="${color}" d="${d.join('')}"/>`;
     });
-    layers.push(`<g id="Edges" fill="none" stroke="${edges.color}" stroke-width="${r(edges.thickness * 1.25)}" stroke-linecap="round" stroke-linejoin="round"${edges.opacity < 1 ? ` stroke-opacity="${r(edges.opacity)}"` : ''}>`
-      + `<path d="${d.join('')}"/></g>`);
+    layers.push(`<g id="Edges" fill="none" stroke-width="${r(edges.thickness * 1.25)}" stroke-linecap="round" stroke-linejoin="round"${edges.opacity < 1 ? ` stroke-opacity="${r(edges.opacity)}"` : ''}>`
+      + `${paths.join('')}</g>`);
   }
 
   // Dimensions, exactly as their materials show them
@@ -334,6 +345,9 @@ function solidFaces(lead, camera, renderer, w, h, toScreen, forward, albedo) {
       // A mesh can pick its own face colors (o.userData.shade(worldNormal) -> CSS color)
       if (o.userData.shade) {
         out.push({
+          // An up-facing face can also become a clip path (o.userData.topClipId), so
+          // anything laid on it later is hidden wherever the face is
+          clipId: n.y > 0.5 ? o.userData.topClipId : undefined,
           d, pts, depth: depth / group.length, fill: o.userData.shade(n.clone()),
           world: group.map((t) => tris[t].map((k) => world[k])), screen: group.map((t) => tris[t].map((k) => screen[k])),
         });
@@ -350,7 +364,94 @@ function solidFaces(lead, camera, renderer, w, h, toScreen, forward, albedo) {
       });
     }
   });
-  return orderFaces(out, renderer, camera, w, h);
+  return visibleFaces(out, renderer, camera, w, h);
+}
+
+// Visible part of every face, cut out exactly. Whole faces can't always be put in a back-to-
+// front order (interlocking parts cover each other in different places), but two flat
+// triangles never cover each other both ways. So: render triangle ids, find which triangles
+// sit in front of each one, subtract them, then join each face's leftovers into one shape.
+function visibleFaces(faces, renderer, camera, w, h) {
+  const tris = [];
+  faces.forEach((f, i) => f.screen.forEach((s, k) => {
+    const [A, B, C] = s;
+    const area = Math.abs((B[0] - A[0]) * (C[1] - A[1]) - (C[0] - A[0]) * (B[1] - A[1]));
+    if (area > 1e-4) tris.push({ face: i, s, world: f.world[k] });
+  }));
+  const pos = [], ids = [];
+  tris.forEach((t, k) => t.world.forEach((v) => { pos.push(v.x, v.y, v.z); ids.push(k + 1); }));
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('faceId', new THREE.Float32BufferAttribute(ids, 1));
+  const scene = new THREE.Scene();
+  scene.add(new THREE.Mesh(geo, idMaterial));
+  const W = Math.round(w * DEPTH_SCALE), H = Math.round(h * DEPTH_SCALE);
+  const rt = new THREE.WebGLRenderTarget(W, H, { type: THREE.FloatType });
+  const prevTarget = renderer.getRenderTarget();
+  const prevClear = renderer.getClearColor(new THREE.Color()), prevAlpha = renderer.getClearAlpha();
+  renderer.setRenderTarget(rt);
+  renderer.setClearColor(0x000000, 1);
+  renderer.clear();
+  renderer.render(scene, camera);
+  const buf = new Float32Array(W * H * 4);
+  renderer.readRenderTargetPixels(rt, 0, 0, W, H, buf);
+  renderer.setRenderTarget(prevTarget);
+  renderer.setClearColor(prevClear, prevAlpha);
+  rt.dispose(); geo.dispose();
+  const idAt = (x, y) => {
+    const px = Math.round(x * DEPTH_SCALE), py = H - 1 - Math.round(y * DEPTH_SCALE);
+    return px < 0 || py < 0 || px >= W || py >= H ? 0 : Math.round(buf[(py * W + px) * 4]);
+  };
+
+  // Depth of a triangle at a screen point, from its corners' screen depth
+  const depthAt = ([A, B, C], x, y) => {
+    const det = (B[1] - C[1]) * (A[0] - C[0]) + (C[0] - B[0]) * (A[1] - C[1]);
+    if (Math.abs(det) < 1e-9) return Infinity;
+    const l1 = ((B[1] - C[1]) * (x - C[0]) + (C[0] - B[0]) * (y - C[1])) / det;
+    const l2 = ((C[1] - A[1]) * (x - C[0]) + (A[0] - C[0]) * (y - C[1])) / det;
+    return l1 * A[2] + l2 * B[2] + (1 - l1 - l2) * C[2];
+  };
+  // Sample inside each triangle about every 1px: its own id means some of it shows; another
+  // triangle's id means that one may be in front, which only counts if it really is nearer
+  // the camera at that point (neighbours sharing an edge read each other's pixels there)
+  const front = tris.map(() => new Set()), shown = tris.map(() => false);
+  tris.forEach((t, k) => {
+    const [A, B, C] = t.s;
+    const span = Math.max(Math.hypot(B[0] - A[0], B[1] - A[1]), Math.hypot(C[0] - A[0], C[1] - A[1]), Math.hypot(C[0] - B[0], C[1] - B[1]));
+    const n = Math.min(80, Math.max(3, Math.ceil(span)));
+    for (let a = 0; a <= n; a++) for (let b = 0; a + b <= n; b++) {
+      const u = (a + 0.33) / (n + 1), v = (b + 0.33) / (n + 1), r = 1 - u - v;
+      if (r <= 0) continue;
+      const id = idAt(A[0] * r + B[0] * u + C[0] * v, A[1] * r + B[1] * u + C[1] * v);
+      if (id === k + 1) { shown[k] = true; continue; }
+      if (!id || tris[id - 1].face === t.face || front[k].has(id - 1)) continue;
+      const px = A[0] * r + B[0] * u + C[0] * v, py = A[1] * r + B[1] * u + C[1] * v;
+      if (depthAt(tris[id - 1].s, px, py) < depthAt(t.s, px, py) - 1e-6) front[k].add(id - 1);
+    }
+  });
+
+  const poly = (s) => [[...s.map((p) => [p[0], p[1]]), [s[0][0], s[0][1]]]];
+  const pieces = faces.map(() => []);
+  tris.forEach((t, k) => {
+    if (!shown[k]) return;
+    let vis;
+    try {
+      vis = front[k].size ? polygonClipping.difference(poly(t.s), ...[...front[k]].map((j) => poly(tris[j].s))) : [poly(t.s)];
+    } catch { vis = [poly(t.s)]; }
+    pieces[t.face].push(...vis);
+  });
+
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const out = [];
+  faces.forEach((f, i) => {
+    if (!pieces[i].length) return;
+    let merged;
+    try { merged = polygonClipping.union(...pieces[i]); } catch { merged = pieces[i]; }
+    const d = merged.map((p) => p.map((ring) => 'M' + ring.slice(0, -1).map(([x, y]) => `${r2(x)} ${r2(y)}`).join('L') + 'Z').join('')).join('');
+    if (d) out.push({ ...f, d, pts: merged.flat(2) });
+  });
+  // Far to near, so any sliver the sampling missed still sits behind
+  return out.sort((a, b) => b.depth - a.depth);
 }
 
 // Draw order from what actually covers what: render face ids with depth testing,

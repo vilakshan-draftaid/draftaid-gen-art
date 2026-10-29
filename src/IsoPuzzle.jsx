@@ -47,6 +47,8 @@ export default function IsoPuzzle() {
     shuffle: { type: 'action', label: 'New seed' },
     exportSvg: { type: 'action', label: 'Copy SVG' },
     exportPng: { type: 'action', label: 'Copy PNG' },
+    saveSvg: { type: 'action', label: 'Save SVG' },
+    savePng: { type: 'action', label: 'Save PNG' },
     pieces: {
       columns: [3, 1, 8, 1],
       rows: [2, 1, 8, 1],
@@ -75,6 +77,8 @@ export default function IsoPuzzle() {
       placements: { type: 'text', default: DEFAULT_PLACEMENTS },
       size: [0.9, 0.2, 1, 0.01],
       supportedLogo: '#FFFFFF',
+      // Outline of supported pieces; the rest use Look's line color
+      supportedLine: '#1A1A1A',
       comingSoonPiece: '#C8C8C8',
       comingSoonLogo: '#FFFFFF',
     },
@@ -93,6 +97,7 @@ export default function IsoPuzzle() {
       if (key === 'shuffle') ctrl.current?.setValue('seed', Math.random().toString(36).slice(2, 8));
       if (key === 'resetHeights') ctrl.current?.setValue('pieces.heights', '{}');
       if (key === 'exportSvg' || key === 'exportPng') exportRef.current?.(key === 'exportSvg' ? 'svg' : 'png');
+      if (key === 'saveSvg' || key === 'savePng') exportRef.current?.(key === 'saveSvg' ? 'svg' : 'png', true);
     },
   });
   ctrl.current = dial;
@@ -167,9 +172,12 @@ export default function IsoPuzzle() {
       const mesh = new THREE.Mesh(g, mat);
       mesh.userData.shade = (n) => pickShade(set, n);
       mesh.userData.index = index;
+      if (logo) mesh.userData.topClipId = `top-${index}`; // its logo is clipped to this in the SVG
+      const lineColor = on ? p.logos.supportedLine : p.look.lineColor;
+      if (on) mesh.userData.edgeColor = lineColor;
       part.add(mesh);
       if (p.look.lines) {
-        const lines = new THREE.LineSegments(new THREE.EdgesGeometry(g, 20), new THREE.LineBasicMaterial({ color: p.look.lineColor }));
+        const lines = new THREE.LineSegments(new THREE.EdgesGeometry(g, 20), new THREE.LineBasicMaterial({ color: lineColor }));
         lines.userData.isLine = true;
         part.add(lines);
       }
@@ -191,7 +199,7 @@ export default function IsoPuzzle() {
         });
         const lp = new THREE.Mesh(plane, lm);
         lp.userData.isLine = true; // not part of the solid, so the SVG faces skip it
-        lp.userData.logo = { logo, color: lm.color.getStyle(), w, h };
+        lp.userData.logo = { logo, color: lm.color.getStyle(), w, h, clip: `top-${index}` };
         part.add(lp);
       }
     });
@@ -274,14 +282,16 @@ export default function IsoPuzzle() {
     addEventListener('pointermove', move); addEventListener('pointerup', up);
   };
 
-  exportRef.current = async (kind) => {
+  // Copy to the clipboard, or with save = true download the file, named after the seed
+  exportRef.current = async (kind, save = false) => {
     const T = three.current;
     if (!T) return;
     const name = `iso-puzzle-${p.seed || 'seed'}.${kind}`;
     let job;
     if (kind === 'png') {
       T.draw();
-      job = copyPNG(cropPNG(T.renderer.domElement), name);
+      const blob = cropPNG(T.renderer.domElement);
+      job = save ? blob.then((b) => download(b, name)) : copyPNG(blob, name);
     } else {
       const [w, h] = T.size;
       let svg = vectorSnapshot({
@@ -291,9 +301,9 @@ export default function IsoPuzzle() {
         edges: { visible: p.look.lines, color: p.look.lineColor, thickness: p.look.lineWidth, opacity: 1 },
         transparent: true,
       });
-      if (svg) svg = svg.replace(/<\/svg>\s*$/, `${await logosSVG(T, w, h)}</svg>`);
+      if (svg) svg = svg.replace(/<\/svg>\s*$/, `${await logosSVG(T, w, h, svg)}</svg>`);
       T.draw();
-      job = svg ? copySVG(svg, name) : 'Nothing to copy';
+      job = !svg ? 'Nothing to copy' : save ? download(new Blob([svg], { type: 'image/svg+xml' }), name) : copySVG(svg, name);
     }
     Promise.resolve(job).then((m) => { setStatus(m); setTimeout(() => setStatus(''), 2600); });
   };
@@ -328,23 +338,25 @@ function cropPNG(canvas, pad = 24) {
 
 // Logos for the SVG: each top-face plane becomes its artwork masking a color, mapped onto
 // the plane's screen corners with one affine transform (the camera is orthographic)
-async function logosSVG(T, w, h) {
+async function logosSVG(T, w, h, svg) {
   const out = ['<g id="Logos">'];
   const v = new THREE.Vector3();
   const screen = (x, y, z, m) => { v.set(x, y, z).applyMatrix4(m).project(T.camera); return [(v.x + 1) / 2 * w, (1 - v.y) / 2 * h]; };
   let k = 0;
   for (const o of T.part.children) {
     const info = o.userData.logo;
-    if (!info) continue;
+    // No clip path means none of that piece's top shows, so neither does its logo
+    if (!info || !svg.includes(`id="${info.clip}"`)) continue;
     const pos = o.geometry.getAttribute('position');
     // PlaneGeometry corners: 0 top-left, 1 top-right, 2 bottom-left
     const [p0, p1, p2] = [0, 1, 2].map((i) => screen(pos.getX(i), pos.getY(i), pos.getZ(i), o.matrixWorld));
     const m = [p1[0] - p0[0], p1[1] - p0[1], p2[0] - p0[0], p2[1] - p0[1], p0[0], p0[1]].map((n) => Math.round(n * 1000) / 1000);
     const href = await toDataURL(info.logo.src);
     const id = `logo-${k++}`;
-    out.push(`<g id="${info.logo.label}" transform="matrix(${m.join(' ')})">`,
+    // Clipped to the visible part of its piece's top, so pieces in front still cover it
+    out.push(`<g id="${info.logo.label}" clip-path="url(#${info.clip})"><g transform="matrix(${m.join(' ')})">`,
       `<mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="1" height="1" style="mask-type:alpha"><image width="1" height="1" preserveAspectRatio="none" href="${href}"/></mask>`,
-      `<rect width="1" height="1" fill="${info.color}" mask="url(#${id})"/></g>`);
+      `<rect width="1" height="1" fill="${info.color}" mask="url(#${id})"/></g></g>`);
   }
   out.push('</g>');
   return out.join('\n');
@@ -353,4 +365,15 @@ async function toDataURL(src) {
   if (src.startsWith('data:')) return src;
   const blob = await (await fetch(src)).blob();
   return new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(blob); });
+}
+
+// Downloads a file straight to the browser's download folder
+function download(blob, name) {
+  if (!blob) return 'Nothing to save';
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return `Saved ${name}`;
 }

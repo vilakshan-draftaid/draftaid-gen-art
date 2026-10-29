@@ -49,6 +49,10 @@ export default function AxisView() {
       seed: { type: 'text', default: 'draftaid', placeholder: 'Any word' },
       newSeed: { type: 'action', label: 'New seed' },
       axis: { type: 'select', options: ['X', 'Y', 'Z', 'Random'], default: 'Random' },
+      // Iso from the other side of each axis: X from the left, Y from below, Z from the back
+      mirrorX: false,
+      mirrorY: false,
+      mirrorZ: false,
     },
     snapshot: {
       copyPng: { type: 'action', label: 'Copy PNG' },
@@ -57,6 +61,12 @@ export default function AxisView() {
     },
     dimensions: {
       showInIsometric: false,
+      // At features: each dimension sits on the surface it measures, close to the part.
+      // Glass box: each view's dimensions sit on a box face around the part
+      placement: { type: 'select', options: [
+        { value: 'features', label: 'At features' },
+        { value: 'glass', label: 'Glass box' },
+      ], default: 'features' },
       // 1 is the drawing's own spacing; lower pulls dimensions in, higher pushes them out
       distance: [1, 0.2, 3, 0.01],
       // The drafting look: no edges, no material, dimensions in every view. Your own
@@ -124,6 +134,8 @@ export default function AxisView() {
         edges={p.dimensions.dimensionsOnly ? { ...p.edges, visible: false } : p.edges}
         dimsInIso={p.dimensions.dimensionsOnly || p.dimensions.showInIsometric}
         dimSpread={p.dimensions.distance}
+        dimPlacement={p.dimensions.placement}
+        isoMirror={{ x: p.rotation.mirrorX, y: p.rotation.mirrorY, z: p.rotation.mirrorZ }}
         surface={p.dimensions.dimensionsOnly ? { ...p.material, opacity: 0 } : p.material}
         grid={p.grid}
         background={p.background}

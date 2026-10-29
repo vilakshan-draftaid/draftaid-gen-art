@@ -15,9 +15,12 @@ const AXIS_LABEL = { x: 'X axis', y: 'Y axis', z: 'Z axis' };
 // 0 when off-axis, 1 when looking straight down an axis
 const alignment = (dot) => THREE.MathUtils.smoothstep(Math.abs(dot), 0.94, 0.999);
 
-function viewQuaternion(name) {
+// mirror flips the isometric camera to the other side of the part on each axis that's on
+function viewQuaternion(name, mirror) {
   const { dir, up } = VIEWS[name];
-  const eye = new THREE.Vector3(...dir).normalize().multiplyScalar(DISTANCE);
+  const iso = dir.every((v) => v !== 0);
+  const flip = iso && mirror ? [mirror.x ? -1 : 1, mirror.y ? -1 : 1, mirror.z ? -1 : 1] : [1, 1, 1];
+  const eye = new THREE.Vector3(...dir.map((v, i) => v * flip[i])).normalize().multiplyScalar(DISTANCE);
   const m = new THREE.Matrix4().lookAt(eye, new THREE.Vector3(), new THREE.Vector3(...up));
   return new THREE.Quaternion().setFromRotationMatrix(m);
 }
@@ -122,7 +125,7 @@ export default function Viewer(props) {
     state.getModel = (name) => {
       if (state.models[name]) return state.models[name];
       const m = buildModel(name, surface);
-      const anno = buildAnnotations(m.dims, m.bbox, state.spread ?? 1);
+      const anno = buildAnnotations(m.dims, m.bbox, state.spread ?? 1, state.mirror, state.placement, m.group);
       anno.group.position.copy(m.group.position);
       const grid = buildGrid(m.bbox, anno.radius);
       scene.add(m.group);
@@ -338,8 +341,10 @@ export default function Viewer(props) {
       // View: follow the timeline directly while it plays, scrubs or records,
       // otherwise spring the camera from wherever it is now
       const { from, to, t } = p.viewMix;
-      if (from !== last.from || to !== last.to || t !== last.t || p.viewKey !== last.viewKey) {
-        state.targetQ = viewQuaternion(from).slerp(viewQuaternion(to), t);
+      const mirror = p.isoMirror ?? {};
+      const mirrorKey = `${!!mirror.x}${!!mirror.y}${!!mirror.z}`;
+      if (from !== last.from || to !== last.to || t !== last.t || p.viewKey !== last.viewKey || mirrorKey !== last.mirrorKey) {
+        state.targetQ = viewQuaternion(from, mirror).slerp(viewQuaternion(to, mirror), t);
         const first = state.viewName === undefined;
         state.viewName = t >= 1 ? to : t <= 0 ? from : null;
         if (first || p.instant) {
@@ -350,7 +355,7 @@ export default function Viewer(props) {
 
       // Turn: start from the selected view, then rotate the part about screen axes (q is in camera space)
       if (p.turn && p.turn.id !== last.turnId && last.turnId !== undefined) {
-        const base = viewQuaternion(from).slerp(viewQuaternion(to), t);
+        const base = viewQuaternion(from, mirror).slerp(viewQuaternion(to, mirror), t);
         state.targetQ = base.multiply(new THREE.Quaternion(...p.turn.q).invert());
         state.viewName = null;
         state.springTo();
@@ -362,14 +367,18 @@ export default function Viewer(props) {
       }
       state.dimsInIso = p.dimsInIso;
 
-      // Dimension distance: rebuild every built model's dimensions at the new spread
+      // Dimension distance or mirror changed: rebuild every built model's dimensions
       const spread = p.dimSpread ?? 1;
-      if (spread !== state.spread) {
+      const placement = p.dimPlacement ?? 'features';
+      if (spread !== state.spread || mirrorKey !== state.mirrorKey || placement !== state.placement) {
         state.spread = spread;
+        state.mirrorKey = mirrorKey;
+        state.mirror = mirror;
+        state.placement = placement;
         for (const m of Object.values(state.models)) {
           annoScene.remove(m.anno.group);
           disposeAnnotations(m.anno.group);
-          m.anno = buildAnnotations(m.model.dims, m.model.bbox, spread);
+          m.anno = buildAnnotations(m.model.dims, m.model.bbox, spread, mirror, placement, m.model.group);
           m.anno.group.position.copy(m.model.group.position);
           annoScene.add(m.anno.group);
           setAnnotationColor(m.anno, state.detailColor, state.background);
@@ -394,7 +403,7 @@ export default function Viewer(props) {
       state.gridOn = p.grid.visible;
       state.gridColor = p.grid.color;
       state.gridOpacity = p.grid.opacity;
-      last = { from, to, t, viewKey: p.viewKey, turnId: p.turn?.id ?? null, color: p.edges.color, background: p.background };
+      last = { from, to, t, mirrorKey, viewKey: p.viewKey, turnId: p.turn?.id ?? null, color: p.edges.color, background: p.background };
     };
 
     // Video capture: render frames at a fixed size, off the screen loop

@@ -4,7 +4,8 @@ import * as THREE from 'three';
 // chamfers and blind holes, no stacked pieces (so the SVG export has no seam lines).
 // Built in local (u, v, w): the outline lies in u-v, thickness runs 0..t along w.
 // Each hole is { x, y, profile: [[r, w], ...] } from w = 0 (back) to w = t (front);
-// r = 0 at an end means the hole is closed on that side.
+// r = 0 at an end means the hole is closed on that side. A hole can instead be
+// { points: [[u, v], ...] }: any straight-walled through cut, like a slot.
 
 const N = 40; // segments around each hole
 const SEG = 48; // curve segments on the outline
@@ -22,6 +23,7 @@ export function plate(outline, holes, t, { basis = new THREE.Matrix4(), warp } =
   for (const [w, front] of [[t, true], [0, false]]) {
     const shape = new THREE.Shape(outline.getPoints(SEG));
     for (const h of holes) {
+      if (h.points) { shape.holes.push(new THREE.Path(h.points.map(([x, y]) => new THREE.Vector2(x, y)))); continue; }
       const r = (front ? h.profile[h.profile.length - 1] : h.profile[0])[0];
       if (r > 0) shape.holes.push(new THREE.Path(ring(h.x, h.y, r).map(([x, y]) => new THREE.Vector2(x, y))));
     }
@@ -44,8 +46,19 @@ export function plate(outline, holes, t, { basis = new THREE.Matrix4(), warp } =
     tri([p.x, p.y, 0], [q.x, q.y, t], [p.x, p.y, t]);
   });
 
+  // Straight-walled cuts: walk the cut clockwise so the wall faces into the opening
+  for (const h of holes.filter((x) => x.points)) {
+    let cut = h.points.map(([x, y]) => new THREE.Vector2(x, y));
+    if (!THREE.ShapeUtils.isClockWise(cut)) cut = cut.reverse();
+    cut.forEach((p, i) => {
+      const q = cut[(i + 1) % cut.length];
+      tri([p.x, p.y, 0], [q.x, q.y, 0], [q.x, q.y, t]);
+      tri([p.x, p.y, 0], [q.x, q.y, t], [p.x, p.y, t]);
+    });
+  }
+
   // Hole walls: each profile segment revolved, facing into the hole
-  for (const h of holes) {
+  for (const h of holes.filter((x) => !x.points)) {
     for (let s = 0; s < h.profile.length - 1; s++) {
       const [r0, w0] = h.profile[s], [r1, w1] = h.profile[s + 1];
       const A = ring(h.x, h.y, r0), B = ring(h.x, h.y, r1);

@@ -56,8 +56,15 @@ function hole(shape, cx, cy, r) {
 
 // Dimension helpers. view = which axis view shows it, axis = what it measures,
 // at = where the dimension line sits along the other in-plane axis (mm).
-const lin = (view, axis, a, b, at, text) => ({ type: 'linear', view, axis, a, b, at, text });
+// o: { tol: { pm } | { plus, minus }, limits: [upper, lower], basic: true }
+const lin = (view, axis, a, b, at, text, o = {}) => ({ type: 'linear', view, axis, a, b, at, text, ...o });
 const leader = (view, c, r, angle, text, o = {}) => ({ type: 'leader', view, c, r, angle, text, ...o });
+// A note pointing at a surface: the leader ends in a dot on the face, not an arrow on an edge
+const note = (view, c, angle, text, o = {}) => leader(view, c, 0, angle, text, { dot: true, ...o });
+// Feature control frame, e.g. ['⌖', 'Ø0,1 Ⓜ', 'A', 'B', 'C'], on a leader from the feature
+const fcf = (view, c, r, angle, cells, o = {}) => ({ type: 'fcf', view, c, r, angle, cells, ...o });
+// Datum feature symbol: triangle on the feature, letter in a box out along `angle`
+const datum = (view, c, angle, letter, o = {}) => ({ type: 'datum', view, c, angle, letter, ...o });
 const cross = (view, c, r) => ({ type: 'cross', view, c, r });
 const center = (view, a, b) => ({ type: 'center', view, a, b });
 const hidden = (view, a, b) => ({ type: 'hidden', view, a, b });
@@ -426,11 +433,16 @@ function sheetBracket() {
     lin('z', 'y', [0, 0, 0], [25, 40, 0], -12, '40'),
     leader('z', [55, 40, 0], 4.25, 30, 'Ø8,5 (2x)'),
     leader('z', [L - 5, H - 5, 0], 5, 45, 'R5 (2x)', { start: 45 }),
+    note('z', [12, 20, T], 200, 't = 2'),
+    datum('z', [10, 0, D], 270, 'A'),
+    fcf('z', [25, 40, T], 4.25, 150, ['⌖', 'Ø0,3', 'A', 'B'], { len: 30 }),
     // X: side, the L profile
     lin('x', 'z', [0, H, 0], [0, 0, D], H + 12, '50'),
     lin('x', 'y', [0, 0, 0], [0, H, 0], -12, '60'),
     lin('x', 'z', [0, H, 0], [0, H, T], H + 4, '2'),
     leader('x', [0, B, B], R, 135, 'R2', { start: 225 }),
+    datum('x', [0, 45, 0], 0, 'B'),
+    fcf('x', [0, 52, T], 0, 180, ['⊥', '0,2', 'A'], { len: 14 }),
     // Y: top, the base flange
     lin('y', 'x', [20, 0, 35], [60, 0, 35], D + 12, '40'),
     lin('y', 'z', [L, 0, 0], [60, 0, 35], L + 12, '35'),
@@ -438,6 +450,7 @@ function sheetBracket() {
     leader('y', [20, 0, 35], 3.25, 135, 'Ø6,5 (2x)'),
     leader('y', [40, 0, 20], 5, 45, 'Ø10'),
     cross('y', [20, 0, 35], 3.25), cross('y', [60, 0, 35], 3.25), cross('y', [40, 0, 20], 5),
+    note('y', [68, T, 44], 315, 'Bend line', { len: 14 }),
   ];
   return { parts: [base, wall, noUV(extrudeX(bend, 0, L))], dims };
 }
@@ -457,7 +470,9 @@ function tslotExtrusion() {
     // Z: the profile
     lin('z', 'x', [0, S, LEN], [S, S, LEN], S + 12, '40'),
     lin('z', 'y', [S, 0, LEN], [S, S, LEN], S + 12, '40'),
-    lin('z', 'x', [(S - open) / 2, 0, LEN], [(S + open) / 2, 0, LEN], -10, '8,2'),
+    lin('z', 'x', [(S - open) / 2, 0, LEN], [(S + open) / 2, 0, LEN], -10, '8,2', { tol: { pm: '0,1' } }),
+    datum('z', [6, 0, LEN], 225, 'A'),
+    fcf('z', [32, S, LEN], 0, 60, ['∥', '0,15', 'A'], { len: 16 }),
     lin('z', 'y', [0, (S - head) / 2, LEN], [0, (S + head) / 2, LEN], -10, '16'),
     leader('z', [S / 2, S / 2, LEN], 3.4, 45, 'Ø6,8', { len: 22 }),
     cross('z', [S / 2, S / 2, LEN], 3.4),
@@ -466,6 +481,8 @@ function tslotExtrusion() {
     lin('x', 'y', [S, 0, 0], [S, S, 0], -12, '40'),
     hidden('x', [S, S / 2 - 3.4, 0], [S, S / 2 - 3.4, LEN]),
     hidden('x', [S, S / 2 + 3.4, 0], [S, S / 2 + 3.4, LEN]),
+    note('x', [S, 4, 80], 315, 'Clear anodized'),
+    fcf('x', [S, 30, 30], 0, 135, ['⏥', '0,1'], { dot: true, len: 14 }),
     // Y: top
     lin('y', 'x', [0, S, LEN], [S, S, LEN], LEN + 12, '40'),
     lin('y', 'z', [S, S, 0], [S, S, LEN], S + 12, '120'),
@@ -491,10 +508,14 @@ function turnedShaft() {
     lin('z', 'x', [72, -15, 0], [75, -15, 0], -24, '3'),
     lin('z', 'x', [95, 12, 0], [125, 12, 0], 22, '30'),
     lin('z', 'y', [7, -8, 0], [7, 8, 0], 7, 'Ø16'),
-    lin('z', 'y', [30, -10, 0], [30, 10, 0], 30, 'Ø20'),
+    lin('z', 'y', [30, -10, 0], [30, 10, 0], 30, 'Ø20', { tol: { plus: '0', minus: '-0,013' } }),
+    datum('z', [38, -10, 0], 270, 'A', { len: 12 }),
+    fcf('z', [85, 15, 0], 0, 60, ['↗', '0,02', 'A'], { len: 14 }),
+    fcf('z', [118, -12, 0], 0, 300, ['⌭', '0,01'], { len: 12 }),
     lin('z', 'y', [60, -15, 0], [60, 15, 0], 60, 'Ø30'),
     lin('z', 'y', [110, -12, 0], [110, 12, 0], 110, 'Ø24'),
     center('z', [-6, 0, 0], [131, 0, 0]),
+    note('z', [38, 10, 0], 120, 'Ra 0,8', { len: 16 }),
     // Y: top, groove and chamfer callouts
     leader('y', [73.5, 0, -13], 0, 120, 'Ø26 groove', { len: 26 }),
     leader('y', [125, 0, -11.5], 0, 45, '1x45° (2x)', { len: 18 }),
@@ -526,13 +547,18 @@ function flangeHub() {
     leader('y', [0, 0, 0], 25, 45, 'Ø50', { len: 24 }),
     leader('y', [0, 0, 0], 12.5, 225, 'Ø25'),
     leader('y', bolt, 4.5, 20, '6x Ø9'),
-    lin('y', 'x', [-PCD / 2, 0, 0], [PCD / 2, 0, 0], 62, 'Ø76 PCD'),
+    note('y', [-36, TF, 18], 200, 'Ra 3,2'),
+    lin('y', 'x', [-PCD / 2, 0, 0], [PCD / 2, 0, 0], 62, 'Ø76', { basic: true }),
+    fcf('y', [-bolt[0], 0, -bolt[2]], 4.5, 200, ['⌖', 'Ø0,2 Ⓜ', 'A', 'B'], { start: 200 }),
+    datum('y', [0, TF + HH, -12.5], 100, 'B', { len: 10 }),
     cross('y', [0, 0, 0], 50),
     // Z: front, heights and widths
     lin('z', 'y', [50, 0, 0], [50, TF, 0], 62, '12'),
     lin('z', 'y', [25, 0, 0], [25, TF + HH, 0], 74, '42'),
     lin('z', 'x', [-25, TF + HH, 0], [25, TF + HH, 0], TF + HH + 12, 'Ø50'),
     lin('z', 'x', [-50, 0, 0], [50, 0, 0], -14, 'Ø100'),
+    datum('z', [-40, 0, 0], 270, 'A', { len: 12 }),
+    fcf('z', [25, TF + 20, 0], 0, 20, ['⊥', '0,03', 'A'], { len: 14 }),
     hidden('z', [-12.5, 0, 0], [-12.5, TF + HH, 0]),
     hidden('z', [12.5, 0, 0], [12.5, TF + HH, 0]),
     center('z', [0, -6, 0], [0, TF + HH + 6, 0]),
@@ -558,15 +584,20 @@ function milledBlock() {
   const dims = [
     // Y: top
     lin('y', 'x', [0, T, W], [L, T, W], W + 12, '80'),
-    lin('y', 'x', [10, T, 50], [70, T, 50], W + 2, '60'),
+    lin('y', 'x', [10, T, 50], [70, T, 50], W + 2, '60', { basic: true }),
     lin('y', 'z', [L, T, 0], [L, T, W], L + 24, '60'),
-    lin('y', 'z', [70, T, 10], [70, T, 50], L + 12, '40'),
-    leader('y', [40, T, 30], 20, 45, 'Ø40 ↧8'),
+    lin('y', 'z', [70, T, 10], [70, T, 50], L + 12, '40', { basic: true }),
+    leader('y', [40, T, 30], 20, 45, 'Ø40 ↧8', { tol: { plus: '+0,05', minus: '0' } }),
+    fcf('y', [70, T, 50], 5.5, 315, ['⌖', 'Ø0,1 Ⓜ', 'A', 'B', 'C'], { start: 315, len: 16 }),
+    fcf('y', [24, T, 50], 0, 225, ['⏥', '0,02'], { dot: true, len: 12 }),
     leader('y', [10, T, 10], 5.5, 135, '4x Ø6,6 ⌴Ø11'),
     leader('y', [10, T, 30], 3, 200, '2x Ø6 H7'),
+    note('y', [53, T - 8, 30], 0, 'Ra 1,6', { len: 34 }),
     cross('y', [40, T, 30], 20),
     // Z: front, heights and the pocket
     lin('z', 'y', [L, 0, W], [L, T, W], L + 12, '25'),
+    datum('z', [60, T, W], 90, 'A', { len: 10 }),
+    datum('z', [0, 10, W], 180, 'B', { len: 10 }),
     lin('z', 'y', [0, T - 8, W], [0, T, W], -12, '8'),
     lin('z', 'x', [20, T, W], [60, T, W], T + 10, 'Ø40'),
     hidden('z', [20, T - 8, W], [60, T - 8, W]),
@@ -578,9 +609,80 @@ function milledBlock() {
     // X: side
     lin('x', 'z', [L, T, 0], [L, T, W], T + 12, '60'),
     lin('x', 'y', [L, 0, 0], [L, T, 0], -12, '25'),
+    datum('x', [L, 10, W], 180, 'C', { len: 10 }),
     lin('x', 'z', [L, T - 6.4, 5], [L, T - 6.4, 15], T + 4, 'Ø11'),
   ];
   return { parts: [block], dims };
+}
+
+// NIST PMI Complex Test Case 1 (nist_ctc_01_asme1_rd), rebuilt from the iso drawing.
+// The sheet carries only PMI, so sizes are measured off it (about 1.4 px per mm on the
+// iso axes): an H-shaped block with four Ø35 lobe holes, a web with 60° notches, two
+// slots, four Ø25 holes and a raised hex boss. The two Ø20 side holes are left out
+function nistCtc01() {
+  const L = 670, W = 360, T = 100, R = 62, web0 = 90, web1 = 270, HB = 40;
+  const notch = (z, dir) => [[L / 2 + 23, z], [L / 2, z + dir * 40], [L / 2 - 23, z]];
+  // Outline in (x, -z): left bar, top web edge, right bar, bottom web edge
+  const s = new THREE.Shape();
+  const P = ([x, z]) => [x, -z];
+  s.moveTo(...P([-R, 0]));
+  s.absarc(0, 0, R, PI, 0, true);
+  s.lineTo(...P([R, web0]));
+  for (const p of [...notch(web0, 1)].reverse()) s.lineTo(...P(p));
+  s.lineTo(...P([L - R, web0]));
+  s.lineTo(...P([L - R, 0]));
+  s.absarc(L, 0, R, PI, 0, true);
+  s.lineTo(...P([L + R, W]));
+  s.absarc(L, -W, R, 0, -PI, true);
+  s.lineTo(...P([L - R, web1]));
+  for (const p of notch(web1, -1)) s.lineTo(...P(p));
+  s.lineTo(...P([R, web1]));
+  s.lineTo(...P([R, W]));
+  s.absarc(0, -W, R, 0, -PI, true);
+  s.lineTo(...P([-R, 0]));
+
+  // Slot along X: a stadium, as a straight-walled cut
+  const slot = (cx, cz, len, wid) => {
+    const pts = [], r = wid / 2;
+    for (let k = 0; k <= 12; k++) { const a = -PI / 2 + (k / 12) * PI; pts.push([cx + len / 2 - r + r * Math.cos(a), -(cz + r * Math.sin(a))]); }
+    for (let k = 0; k <= 12; k++) { const a = PI / 2 + (k / 12) * PI; pts.push([cx - len / 2 + r + r * Math.cos(a), -(cz + r * Math.sin(a))]); }
+    return { points: pts };
+  };
+  const small = [[L / 2 - 95, 125], [L / 2 - 95, 235], [L / 2 + 95, 125], [L / 2 + 95, 235]];
+  const holes = [
+    ...[[0, 0], [L, 0], [0, W], [L, W]].map(([x, z]) => ({ x, y: -z, profile: thru(35, T) })),
+    ...small.map(([x, z]) => ({ x, y: -z, profile: thru(25, T) })),
+    slot(170, 135, 110, 30), slot(L - 170, W - 135, 110, 30),
+  ];
+  const body = plate(s, holes, T, { basis: FLAT() });
+  const hex = new THREE.Shape(Array.from({ length: 6 }, (_, k) => {
+    const a = (k * PI) / 3 + PI / 6;
+    return new THREE.Vector2(L / 2 + 48 * Math.cos(a), -(W / 2) + 48 * Math.sin(a));
+  }));
+  const boss = plate(hex, [], HB, { basis: FLAT().premultiply(new THREE.Matrix4().makeTranslation(0, T, 0)) });
+
+  const top = T, h0 = small[3];
+  const dims = [
+    // Y: the top face, where most of the PMI lives
+    datum('y', [-30, top, -30], 135, 'A'),
+    fcf('y', [-40, top, 180], 0, 160, ['⏥', '0,2'], { dot: true }),
+    leader('y', [0, top, 0], 17.5, 60, 'Ø', { limits: ['35,2', '34,8'] }),
+    leader('y', [L, top, 0], 17.5, 45, 'Ø34,8 - 35,2'),
+    datum('y', [17.5, top, W], 210, 'B'),
+    datum('y', [L - 17.5, top, W], 300, 'C'),
+    leader('y', [h0[0], top, h0[1]], 12.5, 20, 'Ø25', { tol: { pm: '0,15' } }),
+    fcf('y', [L / 2 + 30, top + HB, W / 2], 0, 30, ['⌓', '0,5', 'A'], { dot: true }),
+    fcf('y', [225, top, 135], 0, 70, ['⌖', '0,75', 'A', 'B', 'C'], { dot: true }),
+    fcf('y', [L - 225, top, W - 135], 0, 290, ['⌖', '0,75', 'A', 'B', 'C'], { dot: true }),
+    leader('y', [L / 2, top, web0 + 40], 0, 250, '60°', { tol: { pm: '0,5°' } }),
+    // Z: the front, lobe holes seen edge-on and the lobe cylinder
+    lin('z', 'x', [-17.5, 0, W + R], [17.5, 0, W + R], -24, 'Ø35', { tol: { plus: '0', minus: '-0,2' } }),
+    lin('z', 'x', [L - 17.5, 0, W + R], [L + 17.5, 0, W + R], -24, 'Ø35', { tol: { plus: '+0,2', minus: '0' } }),
+    fcf('z', [L - 30, 50, W + R], 0, 210, ['⌓', '1,25', 'A', 'B', 'C'], { dot: true }),
+    // X: the right end
+    fcf('x', [L + R, 50, W / 2], 0, 160, ['⊥', '1,5', 'A'], { dot: true }),
+  ];
+  return { parts: [body, boss], dims };
 }
 
 export const MODELS = {
@@ -595,6 +697,7 @@ export const MODELS = {
   'Turned shaft': turnedShaft,
   'Flange hub': flangeHub,
   'Milled block': milledBlock,
+  'NIST CTC 01': nistCtc01,
 };
 
 export function buildModel(name, material) {
