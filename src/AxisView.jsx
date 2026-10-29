@@ -13,7 +13,7 @@ const VIEW_NAMES = Object.keys(VIEWS);
 // Screen axes: X tips top to bottom, Y turns left to right, Z spins in the screen plane
 const AXES = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] };
 // Dials that follow the theme: path -> THEMES key
-const THEMED = [['background', 'background'], ['edges.color', 'edges'], ['material.color', 'surface'], ['grid.color', 'grid']];
+const THEMED = [['background', 'background'], ['edges.color', 'edges'], ['dimensions.color', 'edges'], ['material.color', 'surface'], ['grid.color', 'grid']];
 
 // Seeded turn in camera space: up to 180° either way about one screen axis, or all three
 function turnFor(seed, axis) {
@@ -72,6 +72,8 @@ export default function AxisView() {
       // The drafting look: no edges, no material, dimensions in every view. Your own
       // edge, material and iso settings come back when it's off
       dimensionsOnly: false,
+      // Dimension lines, text, frames and datums; edges keep their own color
+      color: THEMES.light.edges,
     },
     edges: { visible: true, color: THEMES.light.edges, thickness: [1, 0.5, 3, 0.1], opacity: [1, 0, 1, 0.01] },
     material: { color: THEMES.light.surface, opacity: [1, 0, 1, 0.01] },
@@ -134,6 +136,7 @@ export default function AxisView() {
         edges={p.dimensions.dimensionsOnly ? { ...p.edges, visible: false } : p.edges}
         dimsInIso={p.dimensions.dimensionsOnly || p.dimensions.showInIsometric}
         dimSpread={p.dimensions.distance}
+        dimColor={p.dimensions.color}
         dimPlacement={p.dimensions.placement}
         isoMirror={{ x: p.rotation.mirrorX, y: p.rotation.mirrorY, z: p.rotation.mirrorZ }}
         surface={p.dimensions.dimensionsOnly ? { ...p.material, opacity: 0 } : p.material}

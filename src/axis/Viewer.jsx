@@ -391,9 +391,10 @@ export default function Viewer(props) {
       u.thickness.value = p.edges.thickness * (state.capture?.lineScale ?? 1);
       state.lineOpacity = p.edges.opacity;
 
-      // Details (dimensions) follow the edge color
-      if (p.edges.color !== last.color || p.background !== last.background) {
-        state.detailColor = p.edges.color;
+      // Dimensions take their own color when set, otherwise the edge color
+      const detail = p.dimColor ?? p.edges.color;
+      if (detail !== last.color || p.background !== last.background) {
+        state.detailColor = detail;
         state.background = p.background;
         state.applyDetailColor();
       }
@@ -403,7 +404,7 @@ export default function Viewer(props) {
       state.gridOn = p.grid.visible;
       state.gridColor = p.grid.color;
       state.gridOpacity = p.grid.opacity;
-      last = { from, to, t, mirrorKey, viewKey: p.viewKey, turnId: p.turn?.id ?? null, color: p.edges.color, background: p.background };
+      last = { from, to, t, mirrorKey, viewKey: p.viewKey, turnId: p.turn?.id ?? null, color: detail, background: p.background };
     };
 
     // Video capture: render frames at a fixed size, off the screen loop
