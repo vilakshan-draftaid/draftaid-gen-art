@@ -11,6 +11,8 @@ import TetrisGrid from './TetrisGrid.jsx';
 import IntegrationsGrid from './IntegrationsGrid.jsx';
 import PuzzleGrid from './PuzzleGrid.jsx';
 import IsoPuzzle from './IsoPuzzle.jsx';
+import AssemblyHairline from './AssemblyHairline.jsx';
+import DataSphere from './DataSphere.jsx';
 
 const TABS = [
   { id: 'grid', label: 'Symbol grid' },
@@ -24,10 +26,12 @@ const TABS = [
   { id: 'tetris', label: 'Tetris' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'puzzle', label: 'Puzzle' },
+  { id: 'sphere', label: 'Data sphere' },
   // A group: its sub-tabs show under it while one of them is open
   { id: 'iso', label: 'Iso pieces', children: [
     { id: 'iso-step', label: 'Step' },
     { id: 'iso-puzzle', label: 'Puzzle' },
+    { id: 'iso-assembly', label: 'Assembly' },
   ] },
 ];
 const IDS = TABS.flatMap((t) => (t.children ? t.children.map((c) => c.id) : [t.id]));
@@ -62,7 +66,7 @@ export default function App() {
           ];
         })}
       </nav>
-      {tab === 'grid' ? <SymbolGrid /> : tab === 'shape' ? <ShapeGrid /> : tab === 'hero' ? <HeroTab /> : tab === 'reel' ? <Showreel /> : tab === 'drawing' ? <DrawingTab /> : tab === 'cursor' ? <CursorGrid /> : tab === 'axis' ? <AxisView /> : tab === 'tetris' ? <TetrisGrid /> : tab === 'integrations' ? <IntegrationsGrid /> : tab === 'puzzle' ? <PuzzleGrid /> : tab === 'iso-puzzle' ? <IsoPuzzle key="puzzle" /> : tab === 'iso-step' ? <IsoPuzzle key="step" logos={false} /> : <PartsGrid />}
+      {tab === 'grid' ? <SymbolGrid /> : tab === 'shape' ? <ShapeGrid /> : tab === 'hero' ? <HeroTab /> : tab === 'reel' ? <Showreel /> : tab === 'drawing' ? <DrawingTab /> : tab === 'cursor' ? <CursorGrid /> : tab === 'axis' ? <AxisView /> : tab === 'tetris' ? <TetrisGrid /> : tab === 'integrations' ? <IntegrationsGrid /> : tab === 'puzzle' ? <PuzzleGrid /> : tab === 'iso-puzzle' ? <IsoPuzzle key="puzzle" /> : tab === 'iso-step' ? <IsoPuzzle key="step" logos={false} /> : tab === 'iso-assembly' ? <AssemblyHairline /> : tab === 'sphere' ? <DataSphere /> : <PartsGrid />}
     </>
   );
 }
